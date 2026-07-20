@@ -9,11 +9,80 @@ const SHEET_INFORMASI = 'Informasi';
 const SHEET_JURNAL = 'Jurnal_Mengajar';
 
 function doGet(e) {
+  // Jika ada request API GET (opsional)
+  if (e.parameter.action) {
+    return handleApiRoute(e.parameter.action, e.parameter);
+  }
+  
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('SakuGuru - Portal Administrasi Sekolah')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// Menangani permintaan HTTP POST CORS dari GitHub Pages
+function doPost(e) {
+  try {
+    const requestData = JSON.parse(e.postData.contents);
+    const action = requestData.action;
+    const payload = requestData.payload;
+    
+    const result = handleApiRoute(action, payload);
+    
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: 'CORS API Error: ' + error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function handleApiRoute(action, payload) {
+  switch (action) {
+    case 'verifyLogin':
+      return verifyLogin(payload.nip, payload.password);
+    case 'getInitialData':
+      return getInitialData(payload.nip, payload.role);
+    case 'saveInformasi':
+      return saveInformasi(payload.infoData, payload.action, payload.oldId);
+    case 'deleteInformasi':
+      return deleteInformasi(payload.id);
+    case 'saveClass':
+      return saveClass(payload.classData, payload.action, payload.oldId);
+    case 'deleteClass':
+      return deleteClass(payload.id);
+    case 'saveStudent':
+      return saveStudent(payload.studentData, payload.action, payload.oldNisn);
+    case 'deleteStudent':
+      return deleteStudent(payload.nisn);
+    case 'saveJamMengajar':
+      return saveJamMengajar(payload.jadwalData, payload.action, payload.oldId);
+    case 'deleteJamMengajar':
+      return deleteJamMengajar(payload.id);
+    case 'getAbsensiSession':
+      return getAbsensiSession(payload.tanggal, payload.jamKe, payload.idKelas);
+    case 'saveAbsensiSession':
+      return saveAbsensiSession(payload);
+    case 'getPenilaianSession':
+      return getPenilaianSession(payload.tanggal, payload.jamKe, payload.idKelas, payload.jenisPenilaian);
+    case 'savePenilaianSession':
+      return savePenilaianSession(payload);
+    case 'saveJurnal':
+      return saveJurnal(payload.jurnalData, payload.action, payload.oldId);
+    case 'deleteJurnal':
+      return deleteJurnal(payload.id);
+    case 'saveTeacherOnboarding':
+      return saveTeacherOnboarding(payload.nip, payload.teachingData);
+    case 'saveGlobalPrintSettings':
+      return saveGlobalPrintSettings(payload.settings);
+    case 'getAbsensiForRecap':
+      return getAbsensiForRecap();
+    case 'getPenilaianForRecap':
+      return getPenilaianForRecap();
+    default:
+      return { success: false, message: 'Aksi API tidak dikenali.' };
+  }
 }
 
 function getSheet(sheetName) {
@@ -62,10 +131,6 @@ function getSheet(sheetName) {
   return sheet;
 }
 
-/**
- * BATCH REQUEST API (Centralized Single-Call)
- * Menyatukan seluruh data untuk meminimalisasi overhead google.script.run
- */
 function getInitialData(nip, role) {
   try {
     const classes = getClasses().data || [];
@@ -118,7 +183,6 @@ function getTeachers() {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const teachersMap = {};
 
-    // 1. Ambil guru terdaftar dari sheet Users
     const userSheet = ss.getSheetByName(SHEET_USERS);
     const userData = userSheet ? userSheet.getDataRange().getValues() : [];
     for (let i = 1; i < userData.length; i++) {
@@ -137,7 +201,6 @@ function getTeachers() {
       }
     }
 
-    // 2. Ambil guru yang ditugaskan sebagai Wali Kelas di sheet Kelas
     const kelasSheet = ss.getSheetByName(SHEET_KELAS);
     const kelasData = kelasSheet ? kelasSheet.getDataRange().getValues() : [];
     for (let i = 1; i < kelasData.length; i++) {
@@ -159,7 +222,6 @@ function getTeachers() {
       }
     }
 
-    // 3. Ambil guru dari daftar jadwal mengajar aktif
     const jadwalSheet = ss.getSheetByName(SHEET_JADWAL);
     const jadwalData = jadwalSheet ? jadwalSheet.getDataRange().getValues() : [];
     for (let i = 1; i < jadwalData.length; i++) {

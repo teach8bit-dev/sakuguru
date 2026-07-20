@@ -114,6 +114,7 @@
                 </div>
             </div>
 
+            <!-- Impersonation Widget -->
             <div id="impersonationWidget" class="hidden p-5 border-b border-slate-800/60 bg-yellow-500/5 flex flex-col gap-2">
                 <label class="text-[10px] text-yellow-500 font-extrabold uppercase tracking-wider flex items-center gap-1.5">
                     <i class="ph-bold ph-mask-happy text-sm"></i> Penyamaran Guru
@@ -869,6 +870,10 @@
     <div id="toastContainer" class="fixed bottom-6 right-6 z-50 space-y-2 pointer-events-none"></div>
 
     <script>
+        // MASUKKAN URL WEB APP GOOGLE APPS SCRIPT ANDA DI SINI UNTUK HOSTING GITHUB PAGES!
+        // Contoh: const WEB_URL = "https://script.google.com/macros/s/AKfycbz...-xxx/exec";
+        const WEB_URL = "https://script.google.com/macros/s/AKfycbyaFf9K04EG-tabj6jTL7YviYZtBFaNIxqBuc7l1H8B_rRD5iBQCk9bV-vCoplwAlg/exec"; 
+
         let currentUser = null;
         let originalAdminUser = null;
         let dataTeachersGlobal = [];
@@ -877,7 +882,6 @@
         let dataJadwalGlobal = [];
         let dataInfoGlobal = [];
         let dataJurnalGlobal = [];
-        let tempTeachingData = []; 
         let settingsTeachingData = [];
 
         let printMarginTop = 20;
@@ -916,17 +920,87 @@
             { jam: '9', waktu: '13:25 - 14:00' }
         ];
 
+        function executeBackendAction(actionName, payload, successCallback, failureCallback) {
+            // Jika WEB_URL dikonfigurasi (Mode Eksternal/GitHub Pages)
+            if (WEB_URL && WEB_URL.trim() !== "") {
+                fetch(WEB_URL, {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: {
+                        'Content-Type': 'text/plain' // Menghindari isu pre-flight CORS di Google Apps Script
+                    },
+                    body: JSON.stringify({ action: actionName, payload: payload })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (successCallback) successCallback(data);
+                })
+                .catch(err => {
+                    if (failureCallback) failureCallback(err);
+                    else showToast("Koneksi API Gagal: " + err.message, "error");
+                });
+            } 
+            // Jika berada di ekosistem asli Google Apps Script
+            else if (typeof google !== 'undefined' && google.script && google.script.run) {
+                let runner = google.script.run
+                    .withSuccessHandler(successCallback)
+                    .withFailureHandler(failureCallback || (err => showToast("Gagal memproses data: " + err.message, "error")));
+                
+                if (actionName === 'verifyLogin') runner.verifyLogin(payload.nip, payload.password);
+                else if (actionName === 'getInitialData') runner.getInitialData(payload.nip, payload.role);
+                else if (actionName === 'saveInformasi') runner.saveInformasi(payload.infoData, payload.action, payload.oldId);
+                else if (actionName === 'deleteInformasi') runner.deleteInformasi(payload.id);
+                else if (actionName === 'saveClass') runner.saveClass(payload.classData, payload.action, payload.oldId);
+                else if (actionName === 'deleteClass') runner.deleteClass(payload.id);
+                else if (actionName === 'saveStudent') runner.saveStudent(payload.studentData, payload.action, payload.oldNisn);
+                else if (actionName === 'deleteStudent') runner.deleteStudent(payload.nisn);
+                else if (actionName === 'saveJamMengajar') runner.saveJamMengajar(payload.jadwalData, payload.action, payload.oldId);
+                else if (actionName === 'deleteJamMengajar') runner.deleteJamMengajar(payload.id);
+                else if (actionName === 'getAbsensiSession') runner.getAbsensiSession(payload.tanggal, payload.jamKe, payload.idKelas);
+                else if (actionName === 'saveAbsensiSession') runner.saveAbsensiSession(payload);
+                else if (actionName === 'getPenilaianSession') runner.getPenilaianSession(payload.tanggal, payload.jamKe, payload.idKelas, payload.jenisPenilaian);
+                else if (actionName === 'savePenilaianSession') runner.savePenilaianSession(payload);
+                else if (actionName === 'saveJurnal') runner.saveJurnal(payload.jurnalData, payload.action, payload.oldId);
+                else if (actionName === 'deleteJurnal') runner.deleteJurnal(payload.id);
+                else if (actionName === 'saveTeacherOnboarding') runner.saveTeacherOnboarding(payload.nip, payload.teachingData);
+                else if (actionName === 'saveGlobalPrintSettings') runner.saveGlobalPrintSettings(payload.settings);
+                else if (actionName === 'getAbsensiForRecap') runner.getAbsensiForRecap();
+                else if (actionName === 'getPenilaianForRecap') runner.getPenilaianForRecap();
+            } 
+            // Jika tidak ada WEB_URL dan di luar GAS (Fallback Simulasi Offline)
+            else {
+                simulateLocalOffline(actionName, payload, successCallback);
+            }
+        }
+
+        function simulateLocalOffline(actionName, payload, callback) {
+            setTimeout(() => {
+                if (actionName === 'verifyLogin') {
+                    if (payload.nip === 'admin') callback({ success: true, user: { nip: 'admin', name: 'Admin Simulasi', role: 'admin', dataMengajar: '[]' } });
+                    else callback({ success: true, user: { nip: 'guru', name: 'Guru Simulasi, S.Pd', role: 'guru', dataMengajar: '[{"mapel":"Matematika","kelas":["X-MIPA-1"]}]' } });
+                } else if (actionName === 'getInitialData') {
+                    callback({
+                        success: true,
+                        classes: [{ idKelas: 'X-MIPA-1', namaKelas: 'Sepuluh MIPA Satu', tingkat: '10', namaWali: 'Lilis, S.Pd', nipWali: '1982' }],
+                        students: [{ nisn: '0012345678', nama: 'Zahra Amelia', jk: 'P', idKelas: 'X-MIPA-1', noHp: '081234567890' }],
+                        jadwal: [{ id: 'JM-1', nip: 'guru', namaGuru: 'Guru Simulasi', tanggal: '2026-07-20', jamKe: '2', waktuStr: '08:00 - 08:40', mapel: 'Matematika' }],
+                        info: [{ id: 'INF-1', tanggal: '2026-07-20', isi: 'Mode offline: Konfigurasikan WEB_URL untuk terhubung ke Apps Script.', nipPembuat: 'admin' }],
+                        jurnal: [],
+                        printSettings: { namaKepsek: 'Dr. Ahmad Yani', nipKepsek: '19750000', marginTop: '20', marginBottom: '20', marginLeft: '20', marginRight: '20' },
+                        teachers: []
+                    });
+                } else {
+                    callback({ success: true, message: "Aksi sukses disimulasikan lokal!" });
+                }
+            }, 500);
+        }
+
         function saveSessionToStorage() {
-            if (currentUser) {
-                localStorage.setItem('sakuguru_session_user', JSON.stringify(currentUser));
-            } else {
-                localStorage.removeItem('sakuguru_session_user');
-            }
-            if (originalAdminUser) {
-                localStorage.setItem('sakuguru_session_original_admin', JSON.stringify(originalAdminUser));
-            } else {
-                localStorage.removeItem('sakuguru_session_original_admin');
-            }
+            if (currentUser) localStorage.setItem('sakuguru_session_user', JSON.stringify(currentUser));
+            else localStorage.removeItem('sakuguru_session_user');
+            
+            if (originalAdminUser) localStorage.setItem('sakuguru_session_original_admin', JSON.stringify(originalAdminUser));
+            else localStorage.removeItem('sakuguru_session_original_admin');
         }
 
         function actionLogin() {
@@ -940,46 +1014,24 @@
             btn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i> Memvalidasi...';
             btn.disabled = true;
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run
-                    .withSuccessHandler(res => {
-                        btn.innerHTML = originalBtn;
-                        btn.disabled = false;
-                        if (res.success) {
-                            currentUser = res.user;
-                            saveSessionToStorage();
-                            showToast('Login berhasil! Selamat datang ' + currentUser.name);
-                            document.getElementById('auth-panel').classList.add('hidden');
-                            document.getElementById('workspace-panel').classList.remove('hidden');
-                            finishSetupDashboard();
-                        } else {
-                            showToast(res.message, 'error');
-                        }
-                    })
-                    .withFailureHandler(err => {
-                        btn.innerHTML = originalBtn;
-                        btn.disabled = false;
-                        showToast('Error Server: ' + err.message, 'error');
-                    })
-                    .verifyLogin(nip, pass);
-            } else {
-                // Local Client Simulation mode
+            executeBackendAction('verifyLogin', { nip: nip, password: pass }, res => {
                 btn.innerHTML = originalBtn;
                 btn.disabled = false;
-                const cleanNip = nip.toLowerCase();
-                if (cleanNip === 'admin' && pass === '@Smaga123') {
-                    currentUser = { nip: 'admin', name: 'Administrator Sekolah', role: 'admin', dataMengajar: '[]' };
-                } else if (cleanNip === 'guru' && pass === '@Smaga123') {
-                    currentUser = { nip: 'guru', name: 'Budi Santoso, S.Pd', role: 'guru', dataMengajar: '[{"mapel":"Matematika","kelas":["X-MIPA-1","XI-MIPA-2"]}]' };
+                if (res.success) {
+                    currentUser = res.user;
+                    saveSessionToStorage();
+                    showToast('Login berhasil! Selamat datang ' + currentUser.name);
+                    document.getElementById('auth-panel').classList.add('hidden');
+                    document.getElementById('workspace-panel').classList.remove('hidden');
+                    finishSetupDashboard();
                 } else {
-                    return showToast('Simulasi gagal! Gunakan username "admin" / "guru" dengan sandi "@Smaga123"', 'error');
+                    showToast(res.message, 'error');
                 }
-                saveSessionToStorage();
-                showToast('Mode Simulasi: Login Sukses!');
-                document.getElementById('auth-panel').classList.add('hidden');
-                document.getElementById('workspace-panel').classList.remove('hidden');
-                finishSetupDashboard();
-            }
+            }, err => {
+                btn.innerHTML = originalBtn;
+                btn.disabled = false;
+                showToast('Login gagal terhubung ke server', 'error');
+            });
         }
 
         function togglePasswordVisibility() {
@@ -1007,79 +1059,25 @@
             });
         }
 
-        /**
-         * MEMUAT SELURUH DATA SEKOLAH SECARA BATCH (SINGLE-CALL)
-         * Mengurangi pemanggilan paralel yang memicu "Page Unresponsive" di Google Apps Script
-         */
         function finishSetupDashboard() {
             applyUserRoleUI();
             showToast("Sinkronisasi data sekolah...", "success");
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run
-                    .withSuccessHandler(res => {
-                        if (res.success) {
-                            // Distribusikan data ke memori global
-                            dataKelasGlobal = res.classes;
-                            dataSiswaGlobal = res.students;
-                            dataJadwalGlobal = res.jadwal;
-                            dataInfoGlobal = res.info;
-                            dataJurnalGlobal = res.jurnal;
-                            dataTeachersGlobal = res.teachers;
+            executeBackendAction('getInitialData', { nip: currentUser.nip, role: currentUser.role }, res => {
+                if (res.success) {
+                    dataKelasGlobal = res.classes;
+                    dataSiswaGlobal = res.students;
+                    dataJadwalGlobal = res.jadwal;
+                    dataInfoGlobal = res.info;
+                    dataJurnalGlobal = res.jurnal;
+                    dataTeachersGlobal = res.teachers;
 
-                            // Distribusikan pengaturan cetak
-                            printMarginTop = parseInt(res.printSettings.marginTop) || 20;
-                            printMarginBottom = parseInt(res.printSettings.marginBottom) || 20;
-                            printMarginLeft = parseInt(res.printSettings.marginLeft) || 20;
-                            printMarginRight = parseInt(res.printSettings.marginRight) || 20;
-                            printNamaKepsek = res.printSettings.namaKepsek || 'Dr. H. Ahmad Yani, M.Pd.';
-                            printNipKepsek = res.printSettings.nipKepsek || '197508122000031002';
-
-                            // Render elemen UI dinamis
-                            renderTableKelas(dataKelasGlobal);
-                            renderTableSiswa(dataSiswaGlobal);
-                            renderTableJadwal(dataJadwalGlobal);
-                            renderListInformasi(dataInfoGlobal);
-                            renderTableJurnal(dataJurnalGlobal);
-                            renderImpersonationDropdown();
-                            populasiSiswaKelasFilterDropdown();
-                            
-                            applyUserRoleUI(); // Refresh UI State setelah data global terisi
-                            renderQuickAccess();
-
-                            showToast("Database sinkron dengan Google Sheets!");
-                        } else {
-                            showToast(res.message, "error");
-                        }
-                    })
-                    .withFailureHandler(err => {
-                        showToast("Koneksi gagal: " + err.message, "error");
-                    })
-                    .getInitialData(currentUser.nip, currentUser.role);
-            } else {
-                // Simulasi Lokal Offline Fallback
-                setTimeout(() => {
-                    dataKelasGlobal = [
-                        { idKelas: 'X-MIPA-1', namaKelas: 'Sepuluh MIPA Satu', tingkat: '10', namaWali: 'Lilis, S.Pd', nipWali: '1982' },
-                        { idKelas: 'XI-MIPA-2', namaKelas: 'Sebelas MIPA Dua', tingkat: '11', namaWali: 'Andi, S.Pd', nipWali: '1983' }
-                    ];
-                    dataSiswaGlobal = [
-                        { nisn: '0012345678', nama: 'Zahra Amelia', jk: 'P', idKelas: 'X-MIPA-1', noHp: '081234567890' },
-                        { nisn: '0023456789', nama: 'Fajar Pratama', jk: 'L', idKelas: 'XI-MIPA-2', noHp: '081234567891' }
-                    ];
-                    dataJadwalGlobal = [
-                        { id: 'JM-1', nip: 'guru', namaGuru: 'Budi Santoso, S.Pd', tanggal: '2026-07-20', jamKe: '2', waktuStr: '08:00 - 08:40', mapel: 'Matematika' }
-                    ];
-                    dataInfoGlobal = [
-                        { id: 'INF-1', tanggal: '2026-07-20', isi: 'Mode Offline: Database simulasi aktif. Hubungkan ke Google Web App untuk data riil.', nipPembuat: 'admin' }
-                    ];
-                    dataJurnalGlobal = [
-                        { id: 'JR-1', tanggal: '2026-07-20', jamKe: '2', idKelas: 'X-MIPA-1', mapel: 'Matematika', materi: 'Aljabar Linear', evaluasi: 'Berjalan lancar.', nip: 'guru', namaGuru: 'Budi Santoso' }
-                    ];
-                    dataTeachersGlobal = [
-                        { nip: 'guru', name: 'Budi Santoso, S.Pd', role: 'guru', dataMengajar: '[{"mapel":"Matematika","kelas":["X-MIPA-1","XI-MIPA-2"]}]' },
-                        { nip: 'guru2', name: 'Zulkifli, M.Pd', role: 'guru', dataMengajar: '[{"mapel":"Fisika","kelas":["X-MIPA-1"]},{"mapel":"Bahasa Inggris","kelas":["XI-MIPA-2"]}]' }
-                    ];
+                    printMarginTop = parseInt(res.printSettings.marginTop) || 20;
+                    printMarginBottom = parseInt(res.printSettings.marginBottom) || 20;
+                    printMarginLeft = parseInt(res.printSettings.marginLeft) || 20;
+                    printMarginRight = parseInt(res.printSettings.marginRight) || 20;
+                    printNamaKepsek = res.printSettings.namaKepsek || 'Dr. H. Ahmad Yani, M.Pd.';
+                    printNipKepsek = res.printSettings.nipKepsek || '197508122000031002';
 
                     renderTableKelas(dataKelasGlobal);
                     renderTableSiswa(dataSiswaGlobal);
@@ -1088,11 +1086,15 @@
                     renderTableJurnal(dataJurnalGlobal);
                     renderImpersonationDropdown();
                     populasiSiswaKelasFilterDropdown();
-                    applyUserRoleUI();
+                    
+                    applyUserRoleUI(); 
                     renderQuickAccess();
-                    showToast("Simulasi data offline berhasil dimuat!");
-                }, 1000);
-            }
+
+                    showToast("Database sinkron dengan Google Sheets!");
+                } else {
+                    showToast(res.message, "error");
+                }
+            });
         }
 
         function applyUserRoleUI() {
@@ -1105,7 +1107,6 @@
                 ? 'Penyamaran (Guru)' 
                 : (isAdm ? 'Admin Sekolah' : 'Guru Pengajar');
 
-            // Admin Only Menus
             if (isAdm && !isImpersonating) {
                 document.getElementById('menuAdminOnly').classList.remove('hidden');
                 document.getElementById('menu-pengaturan').classList.add('hidden');
@@ -1120,13 +1121,9 @@
                 document.getElementById('btnAddNewJadwal').classList.add('hidden');
             }
 
-            // Widget impersonasi di sidebar
             const actualUserIsAdmin = isImpersonating || isAdm;
-            if (actualUserIsAdmin) {
-                document.getElementById('impersonationWidget').classList.remove('hidden');
-            } else {
-                document.getElementById('impersonationWidget').classList.add('hidden');
-            }
+            if (actualUserIsAdmin) document.getElementById('impersonationWidget').classList.remove('hidden');
+            else document.getElementById('impersonationWidget').classList.add('hidden');
 
             if (isImpersonating) {
                 document.getElementById('impersonatingBanner').classList.remove('hidden');
@@ -1135,11 +1132,8 @@
                 document.getElementById('impersonatingBanner').classList.add('hidden');
             }
 
-            // Memastikan pilihan dropdown penyamaran tetap tersinkronisasi secara visual
             const selectImp = document.getElementById('selectImpersonateGuru');
-            if (selectImp) {
-                selectImp.value = isImpersonating ? currentUser.nip : "";
-            }
+            if (selectImp) selectImp.value = isImpersonating ? currentUser.nip : "";
 
             populasiAbsensiKelasDropdown();
             populasiPenilaianKelasDropdown();
@@ -1155,9 +1149,7 @@
                 select.innerHTML += `<option value="${t.nip}">${t.name} (${t.nip})</option>`;
             });
 
-            if (originalAdminUser) {
-                select.value = currentUser.nip;
-            }
+            if (originalAdminUser) select.value = currentUser.nip;
         }
 
         function handleImpersonateChange() {
@@ -1183,8 +1175,6 @@
                 saveSessionToStorage();
                 showToast(`Menyamar sebagai: ${currentUser.name}`);
                 applyUserRoleUI();
-                
-                // Muat ulang data jadwal & jurnal mengajar spesifik guru ini secara efisien
                 finishSetupDashboard();
                 switchMenu('home');
             }
@@ -1217,11 +1207,9 @@
             
             const targetPanel = menuId === 'jadwal' ? 'home' : menuId;
             const targetElement = document.getElementById(`panel-${targetPanel}`);
-            if (targetElement) {
-                targetElement.classList.remove('hidden');
-            }
+            if (targetElement) targetElement.classList.remove('hidden');
             
-            if (menuId === 'home') { calculateJurnalStats(); }
+            if (menuId === 'home') calculateJurnalStats();
             if (menuId === 'pengaturan') initPengaturan();
             if (menuId === 'absensi') initAbsensi();
             if (menuId === 'penilaian') initPenilaian();
@@ -1249,9 +1237,7 @@
             try {
                 const d = new Date(tanggalString);
                 return HARI_NAMA[d.getDay()];
-            } catch(e) {
-                return '';
-            }
+            } catch(e) { return ''; }
         }
 
         function getJadwalByHari(hari) {
@@ -1259,17 +1245,6 @@
             if (cleanHari === 'jumat') return JADWAL_JUMAT;
             if (cleanHari === 'sabtu' || cleanHari === 'minggu') return [];
             return JADWAL_SENIN_KAMIS;
-        }
-
-        function fetchInformasi() {
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        dataInfoGlobal = res.data;
-                        renderListInformasi(res.data);
-                    }
-                }).getInformasi();
-            }
         }
 
         function renderListInformasi(list) {
@@ -1330,41 +1305,23 @@
 
             if (!tgl || !isi) return showToast('Harap lengkapi semua kolom!', 'error');
 
-            const payload = { tanggal: tgl, isi: isi, nipPembuat: currentUser.nip };
+            const payload = { infoData: { tanggal: tgl, isi: isi, nipPembuat: currentUser.nip }, action: act, oldId: oldId };
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        showToast(res.message);
-                        closeModal('modalInfo');
-                        finishSetupDashboard(); // Sinkronisasi ulang batch
-                    } else showToast(res.message, 'error');
-                }).saveInformasi(payload, act, oldId);
-            } else {
-                if (act === 'add') {
-                    dataInfoGlobal.push({ id: 'INF-' + new Date().getTime(), ...payload });
-                } else {
-                    const matched = dataInfoGlobal.find(i => i.id === oldId);
-                    if (matched) { matched.tanggal = tgl; matched.isi = isi; }
-                }
-                showToast('Informasi berhasil disimpan (Simulasi)');
-                closeModal('modalInfo');
-                renderListInformasi(dataInfoGlobal);
-            }
+            executeBackendAction('saveInformasi', payload, res => {
+                if (res.success) {
+                    showToast(res.message);
+                    closeModal('modalInfo');
+                    finishSetupDashboard();
+                } else showToast(res.message, 'error');
+            });
         }
 
         function deleteInfo(id) {
             showCustomConfirm('Hapus Pengumuman?', 'Apakah Anda yakin ingin menghapus pengumuman ini?', () => {
-                if (typeof google !== 'undefined' && google.script) {
-                    google.script.run.withSuccessHandler(res => {
-                        if (res.success) { showToast(res.message); finishSetupDashboard(); }
-                        else showToast(res.message, 'error');
-                    }).deleteInformasi(id);
-                } else {
-                    dataInfoGlobal = dataInfoGlobal.filter(i => i.id !== id);
-                    renderListInformasi(dataInfoGlobal);
-                    showToast('Pengumuman dihapus (Simulasi)');
-                }
+                executeBackendAction('deleteInformasi', { id: id }, res => {
+                    if (res.success) { showToast(res.message); finishSetupDashboard(); }
+                    else showToast(res.message, 'error');
+                });
             });
         }
 
@@ -1434,46 +1391,23 @@
 
             if (!classId || !classNama || !classWali) return showToast('Harap lengkapi semua kolom wajib!', 'error');
 
-            const payload = { idKelas: classId, namaKelas: classNama, tingkat: classTingkat, namaWali: classWali, nipWali: classNip };
+            const payload = { classData: { idKelas: classId, namaKelas: classNama, tingkat: classTingkat, namaWali: classWali, nipWali: classNip }, action: act, oldId: oldId };
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        showToast(res.message);
-                        closeModal('modalKelas');
-                        finishSetupDashboard();
-                    } else showToast(res.message, 'error');
-                }).saveClass(payload, act, oldId);
-            } else {
-                if (act === 'add') {
-                    dataKelasGlobal.push(payload);
-                } else {
-                    const matched = dataKelasGlobal.find(k => k.idKelas === oldId);
-                    if (matched) {
-                        matched.namaKelas = classNama;
-                        matched.tingkat = classTingkat;
-                        matched.namaWali = classWali;
-                        matched.nipWali = classNip;
-                    }
-                }
-                showToast('Data kelas berhasil disimpan (Simulasi)');
-                closeModal('modalKelas');
-                renderTableKelas(dataKelasGlobal);
-            }
+            executeBackendAction('saveClass', payload, res => {
+                if (res.success) {
+                    showToast(res.message);
+                    closeModal('modalKelas');
+                    finishSetupDashboard();
+                } else showToast(res.message, 'error');
+            });
         }
 
         function deleteKelas(id) {
             showCustomConfirm('Hapus Kelas?', 'Apakah Anda yakin ingin menghapus kelas ini?', () => {
-                if (typeof google !== 'undefined' && google.script) {
-                    google.script.run.withSuccessHandler(res => {
-                        if (res.success) { showToast(res.message); finishSetupDashboard(); }
-                        else showToast(res.message, 'error');
-                    }).deleteClass(id);
-                } else {
-                    dataKelasGlobal = dataKelasGlobal.filter(k => k.idKelas !== id);
-                    renderTableKelas(dataKelasGlobal);
-                    showToast('Kelas dihapus (Simulasi)');
-                }
+                executeBackendAction('deleteClass', { id: id }, res => {
+                    if (res.success) { showToast(res.message); finishSetupDashboard(); }
+                    else showToast(res.message, 'error');
+                });
             });
         }
 
@@ -1565,46 +1499,23 @@
 
             if (!sNisn || !sNama || !sKelas) return showToast('Harap isi data wajib secara lengkap!', 'error');
 
-            const payload = { nisn: sNisn, nama: sNama, jk: sJk, idKelas: sKelas, noHp: sNoHp };
+            const payload = { studentData: { nisn: sNisn, nama: sNama, jk: sJk, idKelas: sKelas, noHp: sNoHp }, action: act, oldNisn: oldNisn };
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        showToast(res.message);
-                        closeModal('modalSiswa');
-                        finishSetupDashboard();
-                    } else showToast(res.message, 'error');
-                }).saveStudent(payload, act, oldNisn);
-            } else {
-                if (act === 'add') {
-                    dataSiswaGlobal.push(payload);
-                } else {
-                    const matched = dataSiswaGlobal.find(s => s.nisn === oldNisn);
-                    if (matched) {
-                        matched.nama = sNama;
-                        matched.jk = sJk;
-                        matched.idKelas = sKelas;
-                        matched.noHp = sNoHp;
-                    }
-                }
-                showToast('Data siswa disimpan (Simulasi)');
-                closeModal('modalSiswa');
-                finishSetupDashboard();
-            }
+            executeBackendAction('saveStudent', payload, res => {
+                if (res.success) {
+                    showToast(res.message);
+                    closeModal('modalSiswa');
+                    finishSetupDashboard();
+                } else showToast(res.message, 'error');
+            });
         }
 
         function deleteSiswa(nisn) {
             showCustomConfirm('Hapus Siswa?', 'Apakah Anda yakin ingin menghapus data siswa ini?', () => {
-                if (typeof google !== 'undefined' && google.script) {
-                    google.script.run.withSuccessHandler(res => {
-                        if (res.success) { showToast(res.message); finishSetupDashboard(); }
-                        else showToast(res.message, 'error');
-                    }).deleteStudent(nisn);
-                } else {
-                    dataSiswaGlobal = dataSiswaGlobal.filter(s => s.nisn !== nisn);
-                    finishSetupDashboard();
-                    showToast('Siswa berhasil dihapus (Simulasi)');
-                }
+                executeBackendAction('deleteStudent', { nisn: nisn }, res => {
+                    if (res.success) { showToast(res.message); finishSetupDashboard(); }
+                    else showToast(res.message, 'error');
+                });
             });
         }
 
@@ -1613,12 +1524,8 @@
             const classFilter = document.getElementById('filterSiswaKelas').value;
 
             let filtered = dataSiswaGlobal;
-            if (classFilter !== 'ALL') {
-                filtered = filtered.filter(s => s.idKelas === classFilter);
-            }
-            if (query !== '') {
-                filtered = filtered.filter(s => s.nama.toLowerCase().includes(query) || s.nisn.includes(query));
-            }
+            if (classFilter !== 'ALL') filtered = filtered.filter(s => s.idKelas === classFilter);
+            if (query !== '') filtered = filtered.filter(s => s.nama.toLowerCase().includes(query) || s.nisn.includes(query));
             renderTableSiswa(filtered);
         }
 
@@ -1704,52 +1611,33 @@
             const waktuStr = activeJam ? activeJam.waktu : '';
 
             const payload = {
-                nip: currentUser.nip,
-                namaGuru: currentUser.name,
-                tanggal: tgl,
-                jamKe: jam,
-                waktuStr: waktuStr,
-                mapel: mapel
+                jadwalData: {
+                    nip: currentUser.nip,
+                    namaGuru: currentUser.name,
+                    tanggal: tgl,
+                    jamKe: jam,
+                    waktuStr: waktuStr,
+                    mapel: mapel
+                },
+                action: act,
+                oldId: oldId
             };
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        showToast(res.message);
-                        closeModal('modalJadwal');
-                        finishSetupDashboard();
-                    } else showToast(res.message, 'error');
-                }).saveJamMengajar(payload, act, oldId);
-            } else {
-                if (act === 'add') {
-                    dataJadwalGlobal.push({ id: 'JM-' + new Date().getTime(), ...payload });
-                } else {
-                    const matched = dataJadwalGlobal.find(j => j.id === oldId);
-                    if (matched) {
-                        matched.tanggal = tgl;
-                        matched.jamKe = jam;
-                        matched.waktuStr = waktuStr;
-                        matched.mapel = mapel;
-                    }
-                }
-                showToast('Jadwal berhasil disimpan (Simulasi)');
-                closeModal('modalJadwal');
-                renderTableJadwal(dataJadwalGlobal);
-            }
+            executeBackendAction('saveJamMengajar', payload, res => {
+                if (res.success) {
+                    showToast(res.message);
+                    closeModal('modalJadwal');
+                    finishSetupDashboard();
+                } else showToast(res.message, 'error');
+            });
         }
 
         function deleteJadwal(id) {
             showCustomConfirm('Hapus Jadwal?', 'Apakah Anda yakin ingin menghapus log KBM jadwal ini?', () => {
-                if (typeof google !== 'undefined' && google.script) {
-                    google.script.run.withSuccessHandler(res => {
-                        if (res.success) { showToast(res.message); finishSetupDashboard(); }
-                        else showToast(res.message, 'error');
-                    }).deleteJamMengajar(id);
-                } else {
-                    dataJadwalGlobal = dataJadwalGlobal.filter(j => j.id !== id);
-                    renderTableJadwal(dataJadwalGlobal);
-                    showToast('Jadwal berhasil dihapus (Simulasi)');
-                }
+                executeBackendAction('deleteJamMengajar', { id: id }, res => {
+                    if (res.success) { showToast(res.message); finishSetupDashboard(); }
+                    else showToast(res.message, 'error');
+                });
             });
         }
 
@@ -1874,13 +1762,9 @@
             document.getElementById('labelAbsenKelas').textContent = kelas;
             document.getElementById('absensiListContainer').classList.remove('hidden');
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    renderAbsensiSiswa(kelas, res.data || []);
-                }).getAbsensiSession(tgl, jam, kelas);
-            } else {
-                renderAbsensiSiswa(kelas, []);
-            }
+            executeBackendAction('getAbsensiSession', { tanggal: tgl, jamKe: jam, idKelas: kelas }, res => {
+                renderAbsensiSiswa(kelas, res.data || []);
+            });
         }
 
         function renderAbsensiSiswa(kelas, existingData) {
@@ -1953,21 +1837,14 @@
             btn.innerHTML = 'Menyimpan...';
             btn.disabled = true;
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    btn.innerHTML = '<i class="ph-bold ph-floppy-disk"></i> Simpan Presensi';
-                    btn.disabled = false;
-                    if (res.success) {
-                        showToast(res.message);
-                        finishSetupDashboard(); // Sinkron ulang agar rekap terbaru
-                    }
-                    else showToast(res.message, 'error');
-                }).saveAbsensiSession(payload);
-            } else {
+            executeBackendAction('saveAbsensiSession', payload, res => {
                 btn.innerHTML = '<i class="ph-bold ph-floppy-disk"></i> Simpan Presensi';
                 btn.disabled = false;
-                showToast('Absensi berhasil disimpan (Simulasi)');
-            }
+                if (res.success) {
+                    showToast(res.message);
+                    finishSetupDashboard();
+                } else showToast(res.message, 'error');
+            });
         }
 
         function initPenilaian() {
@@ -2040,13 +1917,9 @@
             document.getElementById('labelNilaiKelas').textContent = kelas;
             document.getElementById('penilaianListContainer').classList.remove('hidden');
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    renderPenilaianSiswa(kelas, res.data || []);
-                }).getPenilaianSession(tgl, jam, kelas, jenis);
-            } else {
-                renderPenilaianSiswa(kelas, []);
-            }
+            executeBackendAction('getPenilaianSession', { tanggal: tgl, jamKe: jam, idKelas: kelas, jenisPenilaian: jenis }, res => {
+                renderPenilaianSiswa(kelas, res.data || []);
+            });
         }
 
         function renderPenilaianSiswa(kelas, existingData) {
@@ -2118,7 +1991,6 @@
             if (!isValid) return showToast('Penilaian tidak valid! Nilai harus bernilai antara 0 s.d 100', 'error');
 
             const payload = {
-                target: tgl,
                 tanggal: tgl,
                 jamKe: jam,
                 idKelas: kelas,
@@ -2134,21 +2006,14 @@
             btn.innerHTML = 'Menyimpan...';
             btn.disabled = true;
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    btn.innerHTML = '<i class="ph-bold ph-floppy-disk"></i> Simpan Penilaian';
-                    btn.disabled = false;
-                    if (res.success) {
-                        showToast(res.message);
-                        finishSetupDashboard(); // Sinkron ulang agar rekap terbarui
-                    }
-                    else showToast(res.message, 'error');
-                }).savePenilaianSession(payload);
-            } else {
+            executeBackendAction('savePenilaianSession', payload, res => {
                 btn.innerHTML = '<i class="ph-bold ph-floppy-disk"></i> Simpan Penilaian';
                 btn.disabled = false;
-                showToast('Penilaian berhasil disimpan (Simulasi)');
-            }
+                if (res.success) {
+                    showToast(res.message);
+                    finishSetupDashboard();
+                } else showToast(res.message, 'error');
+            });
         }
 
         function initJurnal() {
@@ -2267,56 +2132,35 @@
             if (!tgl || !jam || !kelas || !mapel || !materi) return showToast('Harap lengkapi seluruh form wajib!', 'error');
 
             const payload = {
-                tanggal: tgl,
-                jamKe: jam,
-                idKelas: kelas,
-                mapel: mapel,
-                materi: materi,
-                evaluasi: evaluasi,
-                nip: currentUser.nip,
-                namaGuru: currentUser.name
+                jurnalData: {
+                    tanggal: tgl,
+                    jamKe: jam,
+                    idKelas: kelas,
+                    mapel: mapel,
+                    materi: materi,
+                    evaluasi: evaluasi,
+                    nip: currentUser.nip,
+                    namaGuru: currentUser.name
+                },
+                action: act,
+                oldId: oldId
             };
 
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        showToast(res.message);
-                        closeModal('modalJurnal');
-                        finishSetupDashboard();
-                    } else showToast(res.message, 'error');
-                }).saveJurnal(payload, act, oldId);
-            } else {
-                if (act === 'add') {
-                    dataJurnalGlobal.push({ id: 'JR-' + new Date().getTime(), ...payload });
-                } else {
-                    const matched = dataJurnalGlobal.find(j => j.id === oldId);
-                    if (matched) {
-                        matched.tanggal = tgl;
-                        matched.jamKe = jam;
-                        matched.idKelas = kelas;
-                        matched.mapel = mapel;
-                        matched.materi = materi;
-                        matched.evaluasi = evaluasi;
-                    }
-                }
-                showToast('Jurnal berhasil disimpan (Simulasi)');
-                closeModal('modalJurnal');
-                renderTableJurnal(dataJurnalGlobal);
-            }
+            executeBackendAction('saveJurnal', payload, res => {
+                if (res.success) {
+                    showToast(res.message);
+                    closeModal('modalJurnal');
+                    finishSetupDashboard();
+                } else showToast(res.message, 'error');
+            });
         }
 
         function deleteJurnal(id) {
             showCustomConfirm('Hapus Jurnal?', 'Apakah Anda yakin ingin menghapus catatan jurnal ini?', () => {
-                if (typeof google !== 'undefined' && google.script) {
-                    google.script.run.withSuccessHandler(res => { 
-                        if(res.success){ showToast(res.message); finishSetupDashboard(); } 
-                        else showToast(res.message,'error'); 
-                    }).deleteJurnal(id);
-                } else {
-                    dataJurnalGlobal = dataJurnalGlobal.filter(j => j.id !== id);
-                    renderTableJurnal(dataJurnalGlobal);
-                    showToast('Jurnal berhasil dihapus (Simulasi)');
-                }
+                executeBackendAction('deleteJurnal', { id: id }, res => {
+                    if (res.success) { showToast(res.message); finishSetupDashboard(); }
+                    else showToast(res.message, 'error');
+                });
             });
         }
 
@@ -2425,39 +2269,21 @@
                 marginRight: printMarginRight
             };
 
-            if (typeof google !== 'undefined' && google.script) {
-                const btn = document.getElementById('btnSaveSettings'); 
-                const ori = btn.innerHTML; 
-                btn.innerHTML = 'Menyimpan...'; 
-                btn.disabled = true;
-                
-                google.script.run.withSuccessHandler(resPrint => {
-                    if (!isAdm) {
-                        google.script.run.withSuccessHandler(resUser => {
-                            if(resUser.success) { 
-                                showToast('Pengaturan Akun & Tugas Mengajar Berhasil Diperbarui!'); 
-                                currentUser.dataMengajar = JSON.stringify(settingsTeachingData); 
-                                saveSessionToStorage();
-                                finishSetupDashboard();
-                            }
-                            btn.innerHTML = ori; btn.disabled = false;
-                        }).saveTeacherOnboarding(currentUser.nip, settingsTeachingData);
-                    } else {
-                        showToast('Pengaturan Cetak Global Berhasil Diperbarui!');
-                        finishSetupDashboard();
-                        btn.innerHTML = ori; btn.disabled = false;
-                    }
-                }).saveGlobalPrintSettings(printPayload);
-            } else {
-                localStorage.setItem('print_settings', JSON.stringify(printPayload));
+            executeBackendAction('saveGlobalPrintSettings', { settings: printPayload }, resPrint => {
                 if (!isAdm) {
-                    localStorage.setItem('guru_settings_' + currentUser.nip, JSON.stringify({ nama: printNamaGuru, nip: printNipGuru }));
-                    currentUser.dataMengajar = JSON.stringify(settingsTeachingData);
-                    saveSessionToStorage();
+                    executeBackendAction('saveTeacherOnboarding', { nip: currentUser.nip, teachingData: settingsTeachingData }, resUser => {
+                        if(resUser.success) { 
+                            showToast('Pengaturan Akun & Tugas Mengajar Berhasil Diperbarui!'); 
+                            currentUser.dataMengajar = JSON.stringify(settingsTeachingData); 
+                            saveSessionToStorage();
+                            finishSetupDashboard();
+                        }
+                    });
+                } else {
+                    showToast('Pengaturan Cetak Global Berhasil Diperbarui!');
+                    finishSetupDashboard();
                 }
-                showToast('Pengaturan berhasil disimpan lokal (Simulasi)');
-                finishSetupDashboard();
-            }
+            });
         }
 
         function getPrintLayoutTemplate(title, bodyContentHTML) {
@@ -2618,15 +2444,10 @@
 
                 if (!kelas) return showToast('Pilih kelas terlebih dahulu!', 'error');
 
-                if (typeof google !== 'undefined' && google.script) {
-                    google.script.run.withSuccessHandler(res => {
-                        if (res.success) {
-                            compileAbsensiPDF(kelas, bulan, siswaId, res.data);
-                        } else showToast(res.message, 'error');
-                    }).getAbsensiForRecap();
-                } else {
-                    compileAbsensiPDF(kelas, bulan, siswaId, []);
-                }
+                executeBackendAction('getAbsensiForRecap', {}, res => {
+                    if (res.success) compileAbsensiPDF(kelas, bulan, siswaId, res.data);
+                    else showToast(res.message, 'error');
+                });
             } else if (type === 'penilaian') {
                 const kelas = document.getElementById('selRekapPenilaianKelas').value;
                 const mapel = document.getElementById('txtRekapPenilaianMapel').value.trim();
@@ -2635,19 +2456,13 @@
 
                 if (!kelas || !mapel) return showToast('Pilih Kelas dan isi Mata Pelajaran wajib!', 'error');
 
-                if (typeof google !== 'undefined' && google.script) {
-                    google.script.run.withSuccessHandler(res => {
-                        if (res.success) {
-                            compilePenilaianPDF(kelas, mapel, materi, siswaId, res.data);
-                        } else showToast(res.message, 'error');
-                    }).getPenilaianForRecap();
-                } else {
-                    compilePenilaianPDF(kelas, mapel, materi, siswaId, []);
-                }
+                executeBackendAction('getPenilaianForRecap', {}, res => {
+                    if (res.success) compilePenilaianPDF(kelas, mapel, materi, siswaId, res.data);
+                    else showToast(res.message, 'error');
+                });
             } else if (type === 'jurnal') {
                 const kelas = document.getElementById('selRekapJurnalKelas').value;
                 const mapel = document.getElementById('txtRekapJurnalMapel').value.trim();
-
                 compileJurnalPDF(kelas, mapel, dataJurnalGlobal);
             }
         }
@@ -2829,12 +2644,8 @@
 
         function compileJurnalPDF(kelas, mapel, jurnalRaw) {
             let filteredJurnal = [...jurnalRaw];
-            if (kelas !== 'ALL') {
-                filteredJurnal = filteredJurnal.filter(j => j.idKelas === kelas);
-            }
-            if (mapel) {
-                filteredJurnal = filteredJurnal.filter(j => j.mapel.toLowerCase().includes(mapel.toLowerCase()));
-            }
+            if (kelas !== 'ALL') filteredJurnal = filteredJurnal.filter(j => j.idKelas === kelas);
+            if (mapel) filteredJurnal = filteredJurnal.filter(j => j.mapel.toLowerCase().includes(mapel.toLowerCase()));
 
             filteredJurnal.sort((a,b) => new Date(a.tanggal) - new Date(b.tanggal));
 
@@ -2940,9 +2751,7 @@
             if (savedUser) {
                 try {
                     currentUser = JSON.parse(savedUser);
-                    if (savedOriginalAdmin) {
-                        originalAdminUser = JSON.parse(savedOriginalAdmin);
-                    }
+                    if (savedOriginalAdmin) originalAdminUser = JSON.parse(savedOriginalAdmin);
                     
                     document.getElementById('auth-panel').classList.add('hidden');
                     document.getElementById('workspace-panel').classList.remove('hidden');
