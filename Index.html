@@ -168,11 +168,11 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                     <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
                         <div class="w-12 h-12 bg-yellow-50 text-yellow-600 rounded-2xl flex items-center justify-center"><i class="ph-bold ph-chalkboard text-2xl"></i></div>
-                        <div><p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Total Kelas</p><h3 id="statTotalKelas" class="text-xl font-extrabold text-dark mt-0.5">0 Kelas</h3></div>
+                        <div><p id="statKelasLabel" class="text-xs font-bold text-slate-400 uppercase tracking-wide">Total Kelas</p><h3 id="statTotalKelas" class="text-xl font-extrabold text-dark mt-0.5">0 Kelas</h3></div>
                     </div>
                     <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
                         <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><i class="ph-bold ph-users text-2xl"></i></div>
-                        <div><p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Total Siswa</p><h3 id="statTotalSiswa" class="text-xl font-extrabold text-dark mt-0.5">0 Siswa</h3></div>
+                        <div><p id="statSiswaLabel" class="text-xs font-bold text-slate-400 uppercase tracking-wide">Total Siswa</p><h3 id="statTotalSiswa" class="text-xl font-extrabold text-dark mt-0.5">0 Siswa</h3></div>
                     </div>
                     <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
                         <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i class="ph-bold ph-notebook text-2xl"></i></div>
@@ -871,8 +871,8 @@
 
     <script>
         // MASUKKAN URL WEB APP GOOGLE APPS SCRIPT ANDA DI SINI UNTUK HOSTING GITHUB PAGES!
-        // Contoh: const WEB_URL = "https://script.google.com/macros/s/AKfycbz...-xxx/exec";
-        const WEB_URL = "https://script.google.com/macros/s/AKfycbyaFf9K04EG-tabj6jTL7YviYZtBFaNIxqBuc7l1H8B_rRD5iBQCk9bV-vCoplwAlg/exec"; 
+        // Contoh: const WEB_URL = "https://script.google.com/macros/s/AKfycbz_xxxxxxxx_xxxxxxxx/exec";
+        const WEB_URL = ""; 
 
         let currentUser = null;
         let originalAdminUser = null;
@@ -927,17 +927,28 @@
                     method: 'POST',
                     mode: 'cors',
                     headers: {
-                        'Content-Type': 'text/plain' // Menghindari isu pre-flight CORS di Google Apps Script
+                        'Content-Type': 'text/plain' // Menghindari isu pre-flight OPTIONS CORS di Google Apps Script
                     },
                     body: JSON.stringify({ action: actionName, payload: payload })
                 })
-                .then(res => res.json())
+                .then(res => {
+                    const contentType = res.headers.get("content-type");
+                    if (contentType && contentType.indexOf("application/json") === -1) {
+                        return res.text().then(textHTML => {
+                            throw new Error("Google API mengirimkan data HTML, bukan JSON. Masalah ini biasa terjadi karena opsi otorisasi Web App Apps Script belum diset ke 'Anyone'.");
+                        });
+                    }
+                    return res.json();
+                })
                 .then(data => {
                     if (successCallback) successCallback(data);
                 })
                 .catch(err => {
                     if (failureCallback) failureCallback(err);
-                    else showToast("Koneksi API Gagal: " + err.message, "error");
+                    else {
+                        showToast("Koneksi API Gagal: " + err.message, "error");
+                        console.error(err);
+                    }
                 });
             } 
             // Jika berada di ekosistem asli Google Apps Script
@@ -1113,12 +1124,20 @@
                 document.getElementById('welcomeSubtitle').textContent = 'Halo Admin, mari kelola seluruh master data sekolah hari ini.';
                 document.getElementById('btnAddInfo').classList.remove('hidden');
                 document.getElementById('btnAddNewJadwal').classList.remove('hidden');
+                
+                // Ubah Label Statistik untuk Admin
+                document.getElementById('statKelasLabel').textContent = "Total Kelas";
+                document.getElementById('statSiswaLabel').textContent = "Total Siswa";
             } else {
                 document.getElementById('menuAdminOnly').classList.add('hidden');
                 document.getElementById('menu-pengaturan').classList.remove('hidden');
                 document.getElementById('welcomeSubtitle').textContent = `Mari kelola kegiatan absensi, penilaian, dan jurnal mengajar Guru ${currentUser.name}.`;
                 document.getElementById('btnAddInfo').classList.add('hidden');
                 document.getElementById('btnAddNewJadwal').classList.add('hidden');
+                
+                // Ubah Label Statistik untuk Guru
+                document.getElementById('statKelasLabel').textContent = "Kelas yang Diajar";
+                document.getElementById('statSiswaLabel').textContent = "Siswa yang Diajar";
             }
 
             const actualUserIsAdmin = isImpersonating || isAdm;

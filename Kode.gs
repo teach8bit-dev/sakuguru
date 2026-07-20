@@ -1,4 +1,4 @@
-const SPREADSHEET_ID = '1f1vepNb9QgsglpR_ZqESjhrJcP49KJxRLkSR3uTad5c';
+const SPREADSHEET_ID = '1f1vepNb9QgsglpR_ZqESjhrJcP49KJxRLkSR3uTad5c'; // Ganti dengan ID Spreadsheet Anda jika menggunakan standalone script
 const SHEET_USERS = 'Users';
 const SHEET_KELAS = 'Kelas';
 const SHEET_SISWA = 'Siswa';
@@ -9,11 +9,9 @@ const SHEET_INFORMASI = 'Informasi';
 const SHEET_JURNAL = 'Jurnal_Mengajar';
 
 function doGet(e) {
-  // Jika ada request API GET (opsional)
   if (e.parameter.action) {
     return handleApiRoute(e.parameter.action, e.parameter);
   }
-  
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('SakuGuru - Portal Administrasi Sekolah')
@@ -21,20 +19,19 @@ function doGet(e) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-// Menangani permintaan HTTP POST CORS dari GitHub Pages
 function doPost(e) {
   try {
     const requestData = JSON.parse(e.postData.contents);
     const action = requestData.action;
     const payload = requestData.payload;
-    
     const result = handleApiRoute(action, payload);
-    
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ success: false, message: 'CORS API Error: ' + error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ 
+      success: false, 
+      message: 'Server internal Apps Script mengalami masalah: ' + error.toString() 
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
@@ -81,49 +78,64 @@ function handleApiRoute(action, payload) {
     case 'getPenilaianForRecap':
       return getPenilaianForRecap();
     default:
-      return { success: false, message: 'Aksi API tidak dikenali.' };
+      return { success: false, message: 'Aksi API tidak dikenali oleh backend.' };
+  }
+}
+
+function getSpreadsheet() {
+  // 1. Coba buka menggunakan SPREADSHEET_ID jika sudah diubah oleh pengguna
+  if (SPREADSHEET_ID && SPREADSHEET_ID !== '1f1vepNb9QgsglpR_ZqESjhrJcP49KJxRLkSR3uTad5c') {
+    try {
+      return SpreadsheetApp.openById(SPREADSHEET_ID);
+    } catch(e) {
+      console.warn("Gagal membuka via SPREADSHEET_ID, mencoba metode fallback active sheet...");
+    }
+  }
+  // 2. Jika ID default, gunakan Spreadsheet yang terikat langsung (container-bound script)
+  try {
+    const activeSS = SpreadsheetApp.getActiveSpreadsheet();
+    if (activeSS) return activeSS;
+  } catch(e) {
+    console.error("Gagal mendapatkan active spreadsheet:", e);
+  }
+  // 3. Fallback terakhir: buka template default
+  try {
+    return SpreadsheetApp.openById('1f1vepNb9QgsglpR_ZqESjhrJcP49KJxRLkSR3uTad5c');
+  } catch(e) {
+    throw new Error("Spreadsheet tidak dapat dimuat. Pastikan SPREADSHEET_ID di Code.gs sudah benar.");
   }
 }
 
 function getSheet(sheetName) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getSpreadsheet();
   let sheet = ss.getSheetByName(sheetName);
-  
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
-    
     if (sheetName === SHEET_USERS) {
       sheet.appendRow(['NIP', 'Nama', 'Password', 'Role', 'Data_Mengajar']);
       sheet.appendRow(['admin', 'Administrator Sekolah', '@Smaga123', 'admin', '']);
       sheet.appendRow(['guru', 'Budi Santoso, S.Pd', '@Smaga123', 'guru', '']);
       sheet.getRange("A1:E1").setFontWeight("bold").setBackground("#f3f4f6");
-    }
-    else if (sheetName === SHEET_KELAS) {
+    } else if (sheetName === SHEET_KELAS) {
       sheet.appendRow(['ID_Kelas', 'Nama_Kelas', 'Tingkat', 'Nama_Wali_Kelas', 'NIP_Wali_Kelas']);
       sheet.getRange("A1:E1").setFontWeight("bold").setBackground("#f3f4f6");
-    }
-    else if (sheetName === SHEET_SISWA) {
+    } else if (sheetName === SHEET_SISWA) {
       sheet.appendRow(['NISN', 'Nama_Siswa', 'Jenis_Kelamin', 'ID_Kelas', 'No_HP_Ortu']);
       sheet.getRange("A1:E1").setFontWeight("bold").setBackground("#f3f4f6");
-    }
-    else if (sheetName === SHEET_JADWAL) {
+    } else if (sheetName === SHEET_JADWAL) {
       sheet.appendRow(['ID_Jadwal', 'NIP_Guru', 'Nama_Guru', 'Tanggal', 'Jam_Ke', 'Waktu_Mengajar', 'Mata_Pelajaran']);
       sheet.getRange("A1:G1").setFontWeight("bold").setBackground("#f3f4f6");
-    }
-    else if (sheetName === SHEET_ABSENSI) {
+    } else if (sheetName === SHEET_ABSENSI) {
       sheet.appendRow(['ID_Absensi', 'Tanggal', 'Jam_Ke', 'ID_Kelas', 'Mata_Pelajaran', 'NIP_Guru', 'Nama_Guru', 'Data_Kehadiran']);
       sheet.getRange("A1:H1").setFontWeight("bold").setBackground("#f3f4f6");
-    }
-    else if (sheetName === SHEET_PENILAIAN) {
+    } else if (sheetName === SHEET_PENILAIAN) {
       sheet.appendRow(['ID_Penilaian', 'Tanggal', 'Jam_Ke', 'ID_Kelas', 'Mata_Pelajaran', 'Materi_Ajar', 'Jenis_Penilaian', 'NIP_Guru', 'Nama_Guru', 'Data_Nilai']);
       sheet.getRange("A1:J1").setFontWeight("bold").setBackground("#f3f4f6");
-    }
-    else if (sheetName === SHEET_INFORMASI) {
+    } else if (sheetName === SHEET_INFORMASI) {
       sheet.appendRow(['ID_Info', 'Tanggal', 'Isi_Informasi', 'NIP_Pembuat']);
       sheet.appendRow(['INF-1', new Date().toISOString().split('T')[0], 'Pastikan pengisian Absensi, Penilaian, dan Jurnal Mengajar dilakukan secara berkala.', 'admin']);
       sheet.getRange("A1:D1").setFontWeight("bold").setBackground("#f3f4f6");
-    }
-    else if (sheetName === SHEET_JURNAL) {
+    } else if (sheetName === SHEET_JURNAL) {
       sheet.appendRow(['ID_Jurnal', 'Tanggal', 'Jam_Ke', 'ID_Kelas', 'Mata_Pelajaran', 'Materi_Pembelajaran', 'Evaluasi_Catatan', 'NIP_Guru', 'Nama_Guru']);
       sheet.getRange("A1:I1").setFontWeight("bold").setBackground("#f3f4f6");
     }
@@ -140,7 +152,6 @@ function getInitialData(nip, role) {
     const jurnal = getJurnal(nip, role).data || [];
     const printSettings = getGlobalPrintSettings().data || {};
     const teachers = getTeachers().data || [];
-    
     return {
       success: true,
       classes: classes,
@@ -160,14 +171,12 @@ function verifyLogin(nip, password) {
   try {
     const sheet = getSheet(SHEET_USERS);
     const data = sheet.getDataRange().getValues();
-    
     for (let i = 1; i < data.length; i++) {
       let dbNip = data[i][0].toString().trim();
       let dbName = data[i][1].toString().trim();
       let dbPass = data[i][2].toString().trim();
       let dbRole = data[i][3].toString().trim().toLowerCase();
       let dbDataMengajar = data[i][4] ? data[i][4].toString() : '[]';
-
       if (dbNip.toLowerCase() === nip.toString().trim().toLowerCase() && dbPass === password.toString().trim()) {
         return { success: true, user: { nip: dbNip, name: dbName, role: dbRole, dataMengajar: dbDataMengajar } };
       }
@@ -180,9 +189,10 @@ function verifyLogin(nip, password) {
 
 function getTeachers() {
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const ss = getSpreadsheet();
     const teachersMap = {};
-
+    
+    // Ambil dari Sheet Users
     const userSheet = ss.getSheetByName(SHEET_USERS);
     const userData = userSheet ? userSheet.getDataRange().getValues() : [];
     for (let i = 1; i < userData.length; i++) {
@@ -190,7 +200,6 @@ function getTeachers() {
       let dbName = userData[i][1].toString().trim();
       let dbRole = userData[i][3].toString().trim().toLowerCase();
       let dbDataMengajar = userData[i][4] ? userData[i][4].toString() : '[]';
-
       if (dbRole === 'guru' && dbNip !== '') {
         teachersMap[dbNip.toLowerCase()] = {
           nip: dbNip,
@@ -200,14 +209,14 @@ function getTeachers() {
         };
       }
     }
-
+    
+    // Tambah/Update data Wali Kelas dari Sheet Kelas
     const kelasSheet = ss.getSheetByName(SHEET_KELAS);
     const kelasData = kelasSheet ? kelasSheet.getDataRange().getValues() : [];
     for (let i = 1; i < kelasData.length; i++) {
       let classId = kelasData[i][0].toString().trim();
       let waliName = kelasData[i][3].toString().trim();
       let waliNip = kelasData[i][4].toString().trim();
-
       if (waliNip !== '' && waliName !== '') {
         const key = waliNip.toLowerCase();
         if (!teachersMap[key]) {
@@ -221,13 +230,13 @@ function getTeachers() {
         }
       }
     }
-
+    
+    // Tambah/Update data Guru dari Jadwal Pelajaran
     const jadwalSheet = ss.getSheetByName(SHEET_JADWAL);
     const jadwalData = jadwalSheet ? jadwalSheet.getDataRange().getValues() : [];
     for (let i = 1; i < jadwalData.length; i++) {
       let nip = jadwalData[i][1].toString().trim();
       let name = jadwalData[i][2].toString().trim();
-
       if (nip !== '' && name !== '') {
         const key = nip.toLowerCase();
         if (!teachersMap[key]) {
@@ -240,7 +249,7 @@ function getTeachers() {
         }
       }
     }
-
+    
     const result = Object.values(teachersMap);
     return { success: true, data: result };
   } catch (error) {
@@ -253,7 +262,6 @@ function saveTeacherOnboarding(nip, teachingData) {
     const sheet = getSheet(SHEET_USERS);
     const data = sheet.getDataRange().getValues();
     const jsonString = JSON.stringify(teachingData);
-    
     for (let i = 1; i < data.length; i++) {
       if (data[i][0].toString().trim().toLowerCase() === nip.toString().trim().toLowerCase()) {
         sheet.getRange(i + 1, 5).setValue(jsonString); 
@@ -337,7 +345,6 @@ function saveClass(classData, action, oldId) {
     const sheet = getSheet(SHEET_KELAS);
     const data = sheet.getDataRange().getValues();
     const rowData = [classData.idKelas, classData.namaKelas, classData.tingkat, classData.namaWali, classData.nipWali];
-
     if (action === 'add') {
       const isExist = data.some(row => row[0].toString().trim().toLowerCase() === classData.idKelas.toLowerCase());
       if (isExist) return { success: false, message: `Kelas ${classData.namaKelas} sudah ada!` };
@@ -400,14 +407,11 @@ function saveStudent(studentData, action, oldNisn) {
     const sheet = getSheet(SHEET_SISWA);
     const data = sheet.getDataRange().getValues();
     const singleQuoteRegex = new RegExp("'", "g");
-
     const formatNoHp = studentData.noHp.startsWith("'") ? studentData.noHp : "'" + studentData.noHp;
     const formatNisn = studentData.nisn.startsWith("'") ? studentData.nisn : "'" + studentData.nisn;
     const rowData = [formatNisn, studentData.nama, studentData.jk, studentData.idKelas, formatNoHp];
-
     const cleanNisn = studentData.nisn.replace(singleQuoteRegex, "").trim();
     const cleanOldNisn = oldNisn.replace(singleQuoteRegex, "").trim();
-
     if (action === 'add') {
       if (data.some(row => row[0].toString().replace(singleQuoteRegex, "").trim() === cleanNisn)) {
         return { success: false, message: `Siswa dengan NISN ${cleanNisn} sudah terdaftar!` };
@@ -452,7 +456,6 @@ function getJamMengajar(nip, role) {
     const sheet = getSheet(SHEET_JADWAL);
     const data = sheet.getDataRange().getValues();
     const result = [];
-    
     for (let i = 1; i < data.length; i++) {
       if(data[i][0] !== '') {
         const rowNip = data[i][1].toString().trim();
@@ -483,7 +486,6 @@ function saveJamMengajar(jadwalData, action, oldId) {
     if (action === 'add') {
       idJadwal = 'JM-' + new Date().getTime();
     }
-
     const rowData = [
       idJadwal, 
       jadwalData.nip, 
@@ -493,7 +495,6 @@ function saveJamMengajar(jadwalData, action, oldId) {
       jadwalData.waktuStr, 
       jadwalData.mapel
     ];
-
     if (action === 'add') {
       sheet.appendRow(rowData);
       return { success: true, message: `Jam mengajar berhasil ditambahkan.` };
@@ -532,7 +533,6 @@ function getAbsensiSession(tanggal, jamKe, idKelas) {
     const sheet = getSheet(SHEET_ABSENSI);
     const data = sheet.getDataRange().getValues();
     const searchId = `${tanggal}_${jamKe}_${idKelas}`;
-    
     for (let i = 1; i < data.length; i++) {
       if (data[i][0].toString() === searchId) {
         return { 
@@ -554,7 +554,6 @@ function saveAbsensiSession(payload) {
     const data = sheet.getDataRange().getValues();
     const idAbsensi = `${payload.tanggal}_${payload.jamKe}_${payload.idKelas}`;
     const jsonKehadiran = JSON.stringify(payload.dataKehadiran);
-    
     const rowData = [
       idAbsensi, 
       payload.tanggal, 
@@ -565,14 +564,12 @@ function saveAbsensiSession(payload) {
       payload.namaGuru, 
       jsonKehadiran
     ];
-
     for (let i = 1; i < data.length; i++) {
       if (data[i][0].toString() === idAbsensi) {
         sheet.getRange(i + 1, 1, 1, 8).setValues([rowData]);
         return { success: true, message: `Data absensi kelas ${payload.idKelas} berhasil diperbarui!` };
       }
     }
-    
     sheet.appendRow(rowData);
     return { success: true, message: `Data absensi kelas ${payload.idKelas} berhasil disimpan!` };
   } catch (error) {
@@ -610,7 +607,6 @@ function getPenilaianSession(tanggal, jamKe, idKelas, jenisPenilaian) {
     const sheet = getSheet(SHEET_PENILAIAN);
     const data = sheet.getDataRange().getValues();
     const searchId = `${tanggal}_${jamKe}_${idKelas}_${jenisPenilaian}`;
-    
     for (let i = 1; i < data.length; i++) {
       if (data[i][0].toString() === searchId) {
         return { 
@@ -632,7 +628,6 @@ function savePenilaianSession(payload) {
     const data = sheet.getDataRange().getValues();
     const idPenilaian = `${payload.tanggal}_${payload.jamKe}_${payload.idKelas}_${payload.jenis}`;
     const jsonNilai = JSON.stringify(payload.dataNilai);
-    
     const rowData = [
       idPenilaian, 
       payload.tanggal, 
@@ -645,14 +640,12 @@ function savePenilaianSession(payload) {
       payload.namaGuru, 
       jsonNilai
     ];
-
     for (let i = 1; i < data.length; i++) {
       if (data[i][0].toString() === idPenilaian) {
         sheet.getRange(i + 1, 1, 1, 10).setValues([rowData]);
         return { success: true, message: `Data penilaian berhasil diperbarui!` };
       }
     }
-    
     sheet.appendRow(rowData);
     return { success: true, message: `Data penilaian berhasil disimpan!` };
   } catch (error) {
@@ -717,7 +710,6 @@ function saveInformasi(infoData, action, oldId) {
       idInfo = 'INF-' + new Date().getTime();
     }
     const rowData = [idInfo, infoData.tanggal, infoData.isi, infoData.nipPembuat];
-
     if (action === 'add') {
       sheet.appendRow(rowData);
       return { success: true, message: 'Informasi pengumuman berhasil ditambahkan.' };
@@ -757,7 +749,6 @@ function getJurnal(nip, role) {
     const data = sheet.getDataRange().getValues();
     const result = [];
     const cleanRole = role.toString().trim().toLowerCase();
-    
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] !== '') {
         const rowNip = data[i][7].toString().trim();
@@ -801,7 +792,6 @@ function saveJurnal(jurnalData, action, oldId) {
       jurnalData.nip,
       jurnalData.namaGuru
     ];
-
     if (action === 'add') {
       sheet.appendRow(rowData);
       return { success: true, message: 'Jurnal mengajar berhasil disimpan.' };
