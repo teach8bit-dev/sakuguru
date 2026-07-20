@@ -9,7 +9,7 @@ const SHEET_INFORMASI = 'Informasi';
 const SHEET_JURNAL = 'Jurnal_Mengajar';
 
 function doGet(e) {
-  return HtmlService.createTemplateFromFile('index')
+  return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('SakuGuru - Portal Administrasi Sekolah')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
@@ -60,6 +60,35 @@ function getSheet(sheetName) {
     }
   }
   return sheet;
+}
+
+/**
+ * BATCH REQUEST API (Centralized Single-Call)
+ * Menyatukan seluruh data untuk meminimalisasi overhead google.script.run
+ */
+function getInitialData(nip, role) {
+  try {
+    const classes = getClasses().data || [];
+    const students = getStudents().data || [];
+    const jadwal = getJamMengajar(nip, role).data || [];
+    const info = getInformasi().data || [];
+    const jurnal = getJurnal(nip, role).data || [];
+    const printSettings = getGlobalPrintSettings().data || {};
+    const teachers = getTeachers().data || [];
+    
+    return {
+      success: true,
+      classes: classes,
+      students: students,
+      jadwal: jadwal,
+      info: info,
+      jurnal: jurnal,
+      printSettings: printSettings,
+      teachers: teachers
+    };
+  } catch (e) {
+    return { success: false, message: 'Gagal memuat batch data: ' + e.message };
+  }
 }
 
 function verifyLogin(nip, password) {
@@ -119,7 +148,6 @@ function getTeachers() {
       if (waliNip !== '' && waliName !== '') {
         const key = waliNip.toLowerCase();
         if (!teachersMap[key]) {
-          // Buat profil guru sementara dengan tugas mengajar otomatis sebagai wali kelas
           const autoTeaching = JSON.stringify([{ mapel: 'Wali Kelas', kelas: [classId] }]);
           teachersMap[key] = {
             nip: waliNip,

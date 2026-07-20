@@ -1007,17 +1007,92 @@
             });
         }
 
+        /**
+         * MEMUAT SELURUH DATA SEKOLAH SECARA BATCH (SINGLE-CALL)
+         * Mengurangi pemanggilan paralel yang memicu "Page Unresponsive" di Google Apps Script
+         */
         function finishSetupDashboard() {
             applyUserRoleUI();
+            showToast("Sinkronisasi data sekolah...", "success");
 
-            fetchKelasData();
-            fetchSiswaData(); 
-            fetchJadwalData(); 
-            fetchInformasi();
-            fetchJurnalData();
-            loadPrintSettingsFromServer();
-            renderQuickAccess();
-            fetchTeachersData();
+            if (typeof google !== 'undefined' && google.script) {
+                google.script.run
+                    .withSuccessHandler(res => {
+                        if (res.success) {
+                            // Distribusikan data ke memori global
+                            dataKelasGlobal = res.classes;
+                            dataSiswaGlobal = res.students;
+                            dataJadwalGlobal = res.jadwal;
+                            dataInfoGlobal = res.info;
+                            dataJurnalGlobal = res.jurnal;
+                            dataTeachersGlobal = res.teachers;
+
+                            // Distribusikan pengaturan cetak
+                            printMarginTop = parseInt(res.printSettings.marginTop) || 20;
+                            printMarginBottom = parseInt(res.printSettings.marginBottom) || 20;
+                            printMarginLeft = parseInt(res.printSettings.marginLeft) || 20;
+                            printMarginRight = parseInt(res.printSettings.marginRight) || 20;
+                            printNamaKepsek = res.printSettings.namaKepsek || 'Dr. H. Ahmad Yani, M.Pd.';
+                            printNipKepsek = res.printSettings.nipKepsek || '197508122000031002';
+
+                            // Render elemen UI dinamis
+                            renderTableKelas(dataKelasGlobal);
+                            renderTableSiswa(dataSiswaGlobal);
+                            renderTableJadwal(dataJadwalGlobal);
+                            renderListInformasi(dataInfoGlobal);
+                            renderTableJurnal(dataJurnalGlobal);
+                            renderImpersonationDropdown();
+                            populasiSiswaKelasFilterDropdown();
+                            
+                            applyUserRoleUI(); // Refresh UI State setelah data global terisi
+                            renderQuickAccess();
+
+                            showToast("Database sinkron dengan Google Sheets!");
+                        } else {
+                            showToast(res.message, "error");
+                        }
+                    })
+                    .withFailureHandler(err => {
+                        showToast("Koneksi gagal: " + err.message, "error");
+                    })
+                    .getInitialData(currentUser.nip, currentUser.role);
+            } else {
+                // Simulasi Lokal Offline Fallback
+                setTimeout(() => {
+                    dataKelasGlobal = [
+                        { idKelas: 'X-MIPA-1', namaKelas: 'Sepuluh MIPA Satu', tingkat: '10', namaWali: 'Lilis, S.Pd', nipWali: '1982' },
+                        { idKelas: 'XI-MIPA-2', namaKelas: 'Sebelas MIPA Dua', tingkat: '11', namaWali: 'Andi, S.Pd', nipWali: '1983' }
+                    ];
+                    dataSiswaGlobal = [
+                        { nisn: '0012345678', nama: 'Zahra Amelia', jk: 'P', idKelas: 'X-MIPA-1', noHp: '081234567890' },
+                        { nisn: '0023456789', nama: 'Fajar Pratama', jk: 'L', idKelas: 'XI-MIPA-2', noHp: '081234567891' }
+                    ];
+                    dataJadwalGlobal = [
+                        { id: 'JM-1', nip: 'guru', namaGuru: 'Budi Santoso, S.Pd', tanggal: '2026-07-20', jamKe: '2', waktuStr: '08:00 - 08:40', mapel: 'Matematika' }
+                    ];
+                    dataInfoGlobal = [
+                        { id: 'INF-1', tanggal: '2026-07-20', isi: 'Mode Offline: Database simulasi aktif. Hubungkan ke Google Web App untuk data riil.', nipPembuat: 'admin' }
+                    ];
+                    dataJurnalGlobal = [
+                        { id: 'JR-1', tanggal: '2026-07-20', jamKe: '2', idKelas: 'X-MIPA-1', mapel: 'Matematika', materi: 'Aljabar Linear', evaluasi: 'Berjalan lancar.', nip: 'guru', namaGuru: 'Budi Santoso' }
+                    ];
+                    dataTeachersGlobal = [
+                        { nip: 'guru', name: 'Budi Santoso, S.Pd', role: 'guru', dataMengajar: '[{"mapel":"Matematika","kelas":["X-MIPA-1","XI-MIPA-2"]}]' },
+                        { nip: 'guru2', name: 'Zulkifli, M.Pd', role: 'guru', dataMengajar: '[{"mapel":"Fisika","kelas":["X-MIPA-1"]},{"mapel":"Bahasa Inggris","kelas":["XI-MIPA-2"]}]' }
+                    ];
+
+                    renderTableKelas(dataKelasGlobal);
+                    renderTableSiswa(dataSiswaGlobal);
+                    renderTableJadwal(dataJadwalGlobal);
+                    renderListInformasi(dataInfoGlobal);
+                    renderTableJurnal(dataJurnalGlobal);
+                    renderImpersonationDropdown();
+                    populasiSiswaKelasFilterDropdown();
+                    applyUserRoleUI();
+                    renderQuickAccess();
+                    showToast("Simulasi data offline berhasil dimuat!");
+                }, 1000);
+            }
         }
 
         function applyUserRoleUI() {
@@ -1038,7 +1113,6 @@
                 document.getElementById('btnAddInfo').classList.remove('hidden');
                 document.getElementById('btnAddNewJadwal').classList.remove('hidden');
             } else {
-                // Sembunyikan modul admin jika murni guru ATAU admin sedang menyamar sebagai guru
                 document.getElementById('menuAdminOnly').classList.add('hidden');
                 document.getElementById('menu-pengaturan').classList.remove('hidden');
                 document.getElementById('welcomeSubtitle').textContent = `Mari kelola kegiatan absensi, penilaian, dan jurnal mengajar Guru ${currentUser.name}.`;
@@ -1046,7 +1120,7 @@
                 document.getElementById('btnAddNewJadwal').classList.add('hidden');
             }
 
-            // Widget impersonasi di sidebar (Hanya muncul jika user aslinya adalah Admin)
+            // Widget impersonasi di sidebar
             const actualUserIsAdmin = isImpersonating || isAdm;
             if (actualUserIsAdmin) {
                 document.getElementById('impersonationWidget').classList.remove('hidden');
@@ -1067,31 +1141,10 @@
                 selectImp.value = isImpersonating ? currentUser.nip : "";
             }
 
-            // Re-render modul dinamis agar menyesuaikan tugas mengajar dari guru yang aktif/sedang disamar
             populasiAbsensiKelasDropdown();
             populasiPenilaianKelasDropdown();
             populasiRekapDropdowns();
             calculateDashboardStats();
-        }
-
-        function fetchTeachersData() {
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        dataTeachersGlobal = res.data;
-                        renderImpersonationDropdown();
-                    }
-                }).getTeachers();
-            } else {
-                // Simulasi lokal dengan pilihan guru yang lebih lengkap dan variatif
-                dataTeachersGlobal = [
-                    { nip: 'guru', name: 'Budi Santoso, S.Pd', role: 'guru', dataMengajar: '[{"mapel":"Matematika","kelas":["X-MIPA-1","XI-MIPA-2"]}]' },
-                    { nip: 'guru2', name: 'Zulkifli, M.Pd', role: 'guru', dataMengajar: '[{"mapel":"Fisika","kelas":["X-MIPA-1"]},{"mapel":"Bahasa Inggris","kelas":["XI-MIPA-2"]}]' },
-                    { nip: 'guru3', name: 'Siti Aminah, M.Si', role: 'guru', dataMengajar: '[{"mapel":"Kimia","kelas":["XI-MIPA-2"]}]' },
-                    { nip: 'guru4', name: 'Rahmat Hidayat, S.Pd', role: 'guru', dataMengajar: '[{"mapel":"Biologi","kelas":["X-MIPA-1"]}]' }
-                ];
-                renderImpersonationDropdown();
-            }
         }
 
         function renderImpersonationDropdown() {
@@ -1102,7 +1155,6 @@
                 select.innerHTML += `<option value="${t.nip}">${t.name} (${t.nip})</option>`;
             });
 
-            // Re-sync value matching saved session user NIP
             if (originalAdminUser) {
                 select.value = currentUser.nip;
             }
@@ -1121,7 +1173,6 @@
                     originalAdminUser = JSON.parse(JSON.stringify(currentUser));
                 }
                 
-                // Set identitas guru palsu ke sesi aktif
                 currentUser = {
                     nip: matched.nip,
                     name: matched.name,
@@ -1133,10 +1184,8 @@
                 showToast(`Menyamar sebagai: ${currentUser.name}`);
                 applyUserRoleUI();
                 
-                // Reload KBM schedules and diaries for this teacher specifically
-                fetchJadwalData();
-                fetchJurnalData();
-                
+                // Muat ulang data jadwal & jurnal mengajar spesifik guru ini secara efisien
+                finishSetupDashboard();
                 switchMenu('home');
             }
         }
@@ -1149,11 +1198,7 @@
                 document.getElementById('selectImpersonateGuru').value = '';
                 showToast('Kembali ke Mode Administrator');
                 applyUserRoleUI();
-                
-                // Restoring core admin calendar data
-                fetchJadwalData();
-                fetchJurnalData();
-                
+                finishSetupDashboard();
                 switchMenu('home');
             }
         }
@@ -1176,9 +1221,7 @@
                 targetElement.classList.remove('hidden');
             }
             
-            if (menuId === 'home') { fetchJadwalData(); fetchInformasi(); fetchJurnalData(); }
-            if (menuId === 'kelas') fetchKelasData();
-            if (menuId === 'siswa') { fetchKelasData(); fetchSiswaData(); } 
+            if (menuId === 'home') { calculateJurnalStats(); }
             if (menuId === 'pengaturan') initPengaturan();
             if (menuId === 'absensi') initAbsensi();
             if (menuId === 'penilaian') initPenilaian();
@@ -1226,9 +1269,6 @@
                         renderListInformasi(res.data);
                     }
                 }).getInformasi();
-            } else {
-                dataInfoGlobal = [{ id: 'INF-1', tanggal: '2026-07-20', isi: 'Info simulasi: Jangan lupa mengisi Jurnal mengajar harian.', nipPembuat: 'admin' }];
-                renderListInformasi(dataInfoGlobal);
             }
         }
 
@@ -1242,7 +1282,6 @@
                 return;
             }
 
-            // Only actual admin (not impersonated teacher) can manage announcements
             const isAdm = currentUser && currentUser.role.toLowerCase() === 'admin' && originalAdminUser === null;
 
             list.forEach(inf => {
@@ -1298,7 +1337,7 @@
                     if (res.success) {
                         showToast(res.message);
                         closeModal('modalInfo');
-                        fetchInformasi();
+                        finishSetupDashboard(); // Sinkronisasi ulang batch
                     } else showToast(res.message, 'error');
                 }).saveInformasi(payload, act, oldId);
             } else {
@@ -1318,7 +1357,7 @@
             showCustomConfirm('Hapus Pengumuman?', 'Apakah Anda yakin ingin menghapus pengumuman ini?', () => {
                 if (typeof google !== 'undefined' && google.script) {
                     google.script.run.withSuccessHandler(res => {
-                        if (res.success) { showToast(res.message); fetchInformasi(); }
+                        if (res.success) { showToast(res.message); finishSetupDashboard(); }
                         else showToast(res.message, 'error');
                     }).deleteInformasi(id);
                 } else {
@@ -1327,25 +1366,6 @@
                     showToast('Pengumuman dihapus (Simulasi)');
                 }
             });
-        }
-
-        function fetchKelasData() {
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        dataKelasGlobal = res.data;
-                        renderTableKelas(res.data);
-                        calculateDashboardStats();
-                    }
-                }).getClasses();
-            } else {
-                dataKelasGlobal = [
-                    { idKelas: 'X-MIPA-1', namaKelas: 'Sepuluh MIPA Satu', tingkat: '10', namaWali: 'Lilis, S.Pd', nipWali: '1982' },
-                    { idKelas: 'XI-MIPA-2', namaKelas: 'Sebelas MIPA Dua', tingkat: '11', namaWali: 'Andi, S.Pd', nipWali: '1983' }
-                ];
-                renderTableKelas(dataKelasGlobal);
-                calculateDashboardStats();
-            }
         }
 
         function renderTableKelas(list) {
@@ -1421,7 +1441,7 @@
                     if (res.success) {
                         showToast(res.message);
                         closeModal('modalKelas');
-                        fetchKelasData();
+                        finishSetupDashboard();
                     } else showToast(res.message, 'error');
                 }).saveClass(payload, act, oldId);
             } else {
@@ -1446,7 +1466,7 @@
             showCustomConfirm('Hapus Kelas?', 'Apakah Anda yakin ingin menghapus kelas ini?', () => {
                 if (typeof google !== 'undefined' && google.script) {
                     google.script.run.withSuccessHandler(res => {
-                        if (res.success) { showToast(res.message); fetchKelasData(); }
+                        if (res.success) { showToast(res.message); finishSetupDashboard(); }
                         else showToast(res.message, 'error');
                     }).deleteClass(id);
                 } else {
@@ -1463,33 +1483,11 @@
             renderTableKelas(filtered);
         }
 
-        function fetchSiswaData() {
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        dataSiswaGlobal = res.data;
-                        renderTableSiswa(res.data);
-                        calculateDashboardStats();
-                        populasiSiswaKelasFilterDropdown();
-                    }
-                }).getStudents();
-            } else {
-                dataSiswaGlobal = [
-                    { nisn: '0012345678', nama: 'Zahra Amelia', jk: 'P', idKelas: 'X-MIPA-1', noHp: '081234567890' },
-                    { nisn: '0023456789', nama: 'Fajar Pratama', jk: 'L', idKelas: 'XI-MIPA-2', noHp: '081234567891' }
-                ];
-                renderTableSiswa(dataSiswaGlobal);
-                calculateDashboardStats();
-                populasiSiswaKelasFilterDropdown();
-            }
-        }
-
         function populasiSiswaKelasFilterDropdown() {
             const select = document.getElementById('filterSiswaKelas');
             if (!select) return;
             select.innerHTML = '<option value="ALL">Semua Kelas</option>';
             
-            // Collect unique class IDs from student data
             const uniqueClasses = [...new Set(dataSiswaGlobal.map(s => s.idKelas))].sort();
             uniqueClasses.forEach(cls => {
                 select.innerHTML += `<option value="${cls}">${cls}</option>`;
@@ -1574,7 +1572,7 @@
                     if (res.success) {
                         showToast(res.message);
                         closeModal('modalSiswa');
-                        fetchSiswaData();
+                        finishSetupDashboard();
                     } else showToast(res.message, 'error');
                 }).saveStudent(payload, act, oldNisn);
             } else {
@@ -1591,7 +1589,7 @@
                 }
                 showToast('Data siswa disimpan (Simulasi)');
                 closeModal('modalSiswa');
-                fetchSiswaData();
+                finishSetupDashboard();
             }
         }
 
@@ -1599,12 +1597,12 @@
             showCustomConfirm('Hapus Siswa?', 'Apakah Anda yakin ingin menghapus data siswa ini?', () => {
                 if (typeof google !== 'undefined' && google.script) {
                     google.script.run.withSuccessHandler(res => {
-                        if (res.success) { showToast(res.message); fetchSiswaData(); }
+                        if (res.success) { showToast(res.message); finishSetupDashboard(); }
                         else showToast(res.message, 'error');
                     }).deleteStudent(nisn);
                 } else {
                     dataSiswaGlobal = dataSiswaGlobal.filter(s => s.nisn !== nisn);
-                    fetchSiswaData();
+                    finishSetupDashboard();
                     showToast('Siswa berhasil dihapus (Simulasi)');
                 }
             });
@@ -1622,23 +1620,6 @@
                 filtered = filtered.filter(s => s.nama.toLowerCase().includes(query) || s.nisn.includes(query));
             }
             renderTableSiswa(filtered);
-        }
-
-        function fetchJadwalData() {
-            if (!currentUser) return;
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        dataJadwalGlobal = res.data;
-                        renderTableJadwal(res.data);
-                    }
-                }).getJamMengajar(currentUser.nip, currentUser.role);
-            } else {
-                dataJadwalGlobal = [
-                    { id: 'JM-1', nip: 'guru', namaGuru: 'Budi Santoso, S.Pd', tanggal: '2026-07-20', jamKe: '2', waktuStr: '08:00 - 08:40', mapel: 'Matematika' }
-                ];
-                renderTableJadwal(dataJadwalGlobal);
-            }
         }
 
         function renderTableJadwal(list) {
@@ -1736,7 +1717,7 @@
                     if (res.success) {
                         showToast(res.message);
                         closeModal('modalJadwal');
-                        fetchJadwalData();
+                        finishSetupDashboard();
                     } else showToast(res.message, 'error');
                 }).saveJamMengajar(payload, act, oldId);
             } else {
@@ -1761,7 +1742,7 @@
             showCustomConfirm('Hapus Jadwal?', 'Apakah Anda yakin ingin menghapus log KBM jadwal ini?', () => {
                 if (typeof google !== 'undefined' && google.script) {
                     google.script.run.withSuccessHandler(res => {
-                        if (res.success) { showToast(res.message); fetchJadwalData(); }
+                        if (res.success) { showToast(res.message); finishSetupDashboard(); }
                         else showToast(res.message, 'error');
                     }).deleteJamMengajar(id);
                 } else {
@@ -1976,7 +1957,10 @@
                 google.script.run.withSuccessHandler(res => {
                     btn.innerHTML = '<i class="ph-bold ph-floppy-disk"></i> Simpan Presensi';
                     btn.disabled = false;
-                    if (res.success) showToast(res.message);
+                    if (res.success) {
+                        showToast(res.message);
+                        finishSetupDashboard(); // Sinkron ulang agar rekap terbaru
+                    }
                     else showToast(res.message, 'error');
                 }).saveAbsensiSession(payload);
             } else {
@@ -2154,7 +2138,10 @@
                 google.script.run.withSuccessHandler(res => {
                     btn.innerHTML = '<i class="ph-bold ph-floppy-disk"></i> Simpan Penilaian';
                     btn.disabled = false;
-                    if (res.success) showToast(res.message);
+                    if (res.success) {
+                        showToast(res.message);
+                        finishSetupDashboard(); // Sinkron ulang agar rekap terbarui
+                    }
                     else showToast(res.message, 'error');
                 }).savePenilaianSession(payload);
             } else {
@@ -2165,26 +2152,7 @@
         }
 
         function initJurnal() {
-            fetchJurnalData();
-        }
-
-        function fetchJurnalData() {
-            if (!currentUser) return;
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success) {
-                        dataJurnalGlobal = res.data;
-                        renderTableJurnal(res.data);
-                        calculateJurnalStats();
-                    }
-                }).getJurnal(currentUser.nip, currentUser.role);
-            } else {
-                dataJurnalGlobal = [
-                    { id: 'JR-1', tanggal: '2026-07-20', jamKe: '2', idKelas: 'X-MIPA-1', mapel: 'Matematika', materi: 'Aljabar Linear', evaluasi: 'Kelas kondusif, siswa antusias.', nip: 'guru', namaGuru: 'Budi Santoso' }
-                ];
-                renderTableJurnal(dataJurnalGlobal);
-                calculateJurnalStats();
-            }
+            calculateJurnalStats();
         }
 
         function calculateJurnalStats() {
@@ -2314,7 +2282,7 @@
                     if (res.success) {
                         showToast(res.message);
                         closeModal('modalJurnal');
-                        fetchJurnalData();
+                        finishSetupDashboard();
                     } else showToast(res.message, 'error');
                 }).saveJurnal(payload, act, oldId);
             } else {
@@ -2341,7 +2309,7 @@
             showCustomConfirm('Hapus Jurnal?', 'Apakah Anda yakin ingin menghapus catatan jurnal ini?', () => {
                 if (typeof google !== 'undefined' && google.script) {
                     google.script.run.withSuccessHandler(res => { 
-                        if(res.success){ showToast(res.message); fetchJurnalData(); } 
+                        if(res.success){ showToast(res.message); finishSetupDashboard(); } 
                         else showToast(res.message,'error'); 
                     }).deleteJurnal(id);
                 } else {
@@ -2470,11 +2438,13 @@
                                 showToast('Pengaturan Akun & Tugas Mengajar Berhasil Diperbarui!'); 
                                 currentUser.dataMengajar = JSON.stringify(settingsTeachingData); 
                                 saveSessionToStorage();
+                                finishSetupDashboard();
                             }
                             btn.innerHTML = ori; btn.disabled = false;
                         }).saveTeacherOnboarding(currentUser.nip, settingsTeachingData);
                     } else {
                         showToast('Pengaturan Cetak Global Berhasil Diperbarui!');
+                        finishSetupDashboard();
                         btn.innerHTML = ori; btn.disabled = false;
                     }
                 }).saveGlobalPrintSettings(printPayload);
@@ -2486,48 +2456,13 @@
                     saveSessionToStorage();
                 }
                 showToast('Pengaturan berhasil disimpan lokal (Simulasi)');
-            }
-        }
-
-        function loadPrintSettingsFromServer() {
-            if (typeof google !== 'undefined' && google.script) {
-                google.script.run.withSuccessHandler(res => {
-                    if (res.success && res.data) {
-                        printMarginTop = parseInt(res.data.marginTop) || 20;
-                        printMarginBottom = parseInt(res.data.marginBottom) || 20;
-                        printMarginLeft = parseInt(res.data.marginLeft) || 20;
-                        printMarginRight = parseInt(res.data.marginRight) || 20;
-                        printNamaKepsek = res.data.namaKepsek || 'Dr. H. Ahmad Yani, M.Pd.';
-                        printNipKepsek = res.data.nipKepsek || '197508122000031002';
-                    }
-                }).getGlobalPrintSettings();
-            } else {
-                const local = localStorage.getItem('print_settings');
-                if (local) {
-                    const parsed = JSON.parse(local);
-                    printMarginTop = parsed.marginTop || 20;
-                    printMarginBottom = parsed.marginBottom || 20;
-                    printMarginLeft = parsed.marginLeft || 20;
-                    printMarginRight = parsed.marginRight || 20;
-                    printNamaKepsek = parsed.namaKepsek || 'Dr. H. Ahmad Yani, M.Pd.';
-                    printNipKepsek = parsed.nipKepsek || '197508122000031002';
-                }
-                const localGuru = localStorage.getItem('guru_settings_' + currentUser?.nip);
-                if (localGuru) {
-                    const parsedG = JSON.parse(localGuru);
-                    printNamaGuru = parsedG.nama || currentUser.name;
-                    printNipGuru = parsedG.nip || currentUser.nip;
-                } else {
-                    printNamaGuru = currentUser?.name || '';
-                    printNipGuru = currentUser?.nip || '';
-                }
+                finishSetupDashboard();
             }
         }
 
         function getPrintLayoutTemplate(title, bodyContentHTML) {
             const formattedCurrentDate = formatDateIndo(new Date().toISOString().split('T')[0]);
             
-            // Menggunakan identitas guru yang aktif di penyamaran
             const activeTeacherName = currentUser ? currentUser.name : '';
             const activeTeacherNip = currentUser ? currentUser.nip : '';
             const nipGuruString = activeTeacherNip ? `NIP. ${activeTeacherNip}` : '-';
@@ -2713,15 +2648,7 @@
                 const kelas = document.getElementById('selRekapJurnalKelas').value;
                 const mapel = document.getElementById('txtRekapJurnalMapel').value.trim();
 
-                if (typeof google !== 'undefined' && google.script) {
-                    google.script.run.withSuccessHandler(res => {
-                        if (res.success) {
-                            compileJurnalPDF(kelas, mapel, res.data);
-                        } else showToast(res.message, 'error');
-                    }).getJurnal(currentUser.nip, currentUser.role);
-                } else {
-                    compileJurnalPDF(kelas, mapel, dataJurnalGlobal);
-                }
+                compileJurnalPDF(kelas, mapel, dataJurnalGlobal);
             }
         }
 
@@ -2981,6 +2908,7 @@
 
         function showToast(message, type = 'success') {
             const container = document.getElementById('toastContainer');
+            if(!container) return;
             const toast = document.createElement('div');
             toast.className = `p-4 rounded-2xl shadow-xl flex items-center gap-3 border transition-all text-xs font-bold pointer-events-auto fade-in ${
                 type === 'success' 
@@ -3016,12 +2944,10 @@
                         originalAdminUser = JSON.parse(savedOriginalAdmin);
                     }
                     
-                    // Directing past standard auth panel right into workspace
                     document.getElementById('auth-panel').classList.add('hidden');
                     document.getElementById('workspace-panel').classList.remove('hidden');
                     
                     finishSetupDashboard();
-                    showToast(`Sesi aktif dipulihkan: ${currentUser.name}`);
                 } catch (e) {
                     console.error("Gagal memulihkan sesi aktif:", e);
                     localStorage.removeItem('sakuguru_session_user');
