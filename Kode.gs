@@ -9,7 +9,7 @@ const SHEET_INFORMASI = 'Informasi';
 const SHEET_JURNAL = 'Jurnal_Mengajar';
 
 function doGet(e) {
-  return HtmlService.createTemplateFromFile('Index')
+  return HtmlService.createTemplateFromFile('index')
     .evaluate()
     .setTitle('SakuGuru - Portal Administrasi Sekolah')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
