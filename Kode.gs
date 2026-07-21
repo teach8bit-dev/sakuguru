@@ -34,7 +34,92 @@ function doPost(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }
+function doPost(e) {
+  // Menggunakan try-catch untuk menangkap error server agar frontend tidak menerima halaman HTML error
+  try {
+    // Parsing data JSON yang dikirim dari GitHub Pages (Frontend)
+    var body = JSON.parse(e.postData.contents);
+    var action = body.action;
+    var payload = body.payload;
+    
+    // Default response jika aksi tidak ditemukan
+    var response = { success: false, message: "Aksi tidak dikenali oleh server." };
+    
+    if (action === "verifyLogin") {
+      // Panggil fungsi untuk mengecek data ke Spreadsheet
+      response = cekLoginDariSpreadsheet(payload.nip, payload.password);
+    }
+    
+    // Tambahkan aksi lain di sini jika diperlukan (misal: "getAbsensi", "saveNilai", dll)
+    // if (action === "getAbsensi") { ... }
 
+    return ContentService.createTextOutput(JSON.stringify(response))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    // Jika ada error pada kode, kirimkan pesan error tersebut ke frontend
+    return ContentService.createTextOutput(JSON.stringify({ 
+      success: false, 
+      message: "Terjadi kesalahan di server: " + error.message 
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet(e) {
+  // Ini hanya berfungsi jika URL Web App dibuka langsung di browser
+  // Berguna untuk memastikan bahwa Web App sudah aktif
+  return ContentService.createTextOutput("Backend SakuGuru terhubung dan aktif.");
+}
+
+function cekLoginDariSpreadsheet(nipInput, passwordInput) {
+  // Panggil Spreadsheet tempat script ini berada
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // =========================================================================
+  // PENTING: Ganti "DataUser" dengan nama Sheet Anda yang berisi data login
+  // =========================================================================
+  var namaSheetDatabase = "DataUser"; 
+  var sheet = ss.getSheetByName(namaSheetDatabase); 
+  
+  // Validasi jika nama sheet salah atau tidak ditemukan
+  if (!sheet) {
+    return { success: false, message: "Error Server: Sheet '" + namaSheetDatabase + "' tidak ditemukan." };
+  }
+
+  // Ambil semua data (termasuk header).
+  var data = sheet.getDataRange().getValues();
+  
+  // Looping dimulai dari i = 1, karena i = 0 adalah baris judul tabel (Header)
+  for (var i = 1; i < data.length; i++) {
+    
+    // =========================================================================
+    // PENTING: Sesuaikan Index (Angka di dalam kurung siku) dengan kolom Anda.
+    // Index 0 = Kolom A, 1 = Kolom B, 2 = Kolom C, dst.
+    // =========================================================================
+    
+    // Gunakan .toString().trim() agar tipe datanya selalu teks dan menghapus spasi tidak sengaja
+    var dbNip      = data[i][0] ? data[i][0].toString().trim() : ""; // Kolom A: NIP
+    var dbPassword = data[i][1] ? data[i][1].toString().trim() : ""; // Kolom B: Password
+    var dbNama     = data[i][2] ? data[i][2].toString().trim() : ""; // Kolom C: Nama
+    var dbRole     = data[i][3] ? data[i][3].toString().trim() : "guru"; // Kolom D: Role
+    
+    // Proses pencocokan (Case-sensitive)
+    if (dbNip === nipInput.toString().trim() && dbPassword === passwordInput.toString().trim()) {
+      // Jika cocok, kembalikan status success dan kirim data user
+      return { 
+        success: true, 
+        user: { 
+          nip: dbNip, 
+          name: dbNama, 
+          role: dbRole 
+        } 
+      };
+    }
+  }
+  
+  // Jika perulangan (looping) selesai dan tidak ada yang cocok
+  return { success: false, message: "NIP atau Password salah!" };
+}
 function handleApiRoute(action, payload) {
   switch (action) {
     case 'verifyLogin':
