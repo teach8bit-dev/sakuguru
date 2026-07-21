@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>SakuGuru - Portal Kerja Guru Profesional</title>
+    
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Inter & Plus Jakarta Sans Fonts -->
@@ -27,6 +28,7 @@
             }
         }
     </script>
+    
     <style>
         body {
             background-color: #F8FAFC;
@@ -89,6 +91,7 @@
     </div>
 
     <div id="workspace-panel" class="hidden min-h-screen flex flex-col md:flex-row">
+        
         <!-- Sidebar Navigation -->
         <aside class="w-full md:w-64 bg-slate-900 border-r border-slate-800 flex flex-col text-slate-300 relative z-20">
             <div class="p-6 border-b border-slate-800 flex items-center justify-between">
@@ -114,7 +117,7 @@
                 </div>
             </div>
 
-            <!-- Impersonation Widget -->
+            <!-- Impersonation Widget (Safeguarded from infinite loops) -->
             <div id="impersonationWidget" class="hidden p-5 border-b border-slate-800/60 bg-yellow-500/5 flex flex-col gap-2">
                 <label class="text-[10px] text-yellow-500 font-extrabold uppercase tracking-wider flex items-center gap-1.5">
                     <i class="ph-bold ph-mask-happy text-sm"></i> Penyamaran Guru
@@ -872,7 +875,7 @@
     <script>
         // MASUKKAN URL WEB APP GOOGLE APPS SCRIPT ANDA DI SINI UNTUK HOSTING GITHUB PAGES!
         // Contoh: const WEB_URL = "https://script.google.com/macros/s/AKfycbz_xxxxxxxx_xxxxxxxx/exec";
-        const WEB_URL = "https://script.google.com/macros/s/AKfycbyaFf9K04EG-tabj6jTL7YviYZtBFaNIxqBuc7l1H8B_rRD5iBQCk9bV-vCoplwAlg/exec"; 
+        const WEB_URL = ""; 
 
         let currentUser = null;
         let originalAdminUser = null;
@@ -892,6 +895,9 @@
         let printNipKepsek = '197508122000031002';
         let printNamaGuru = '';
         let printNipGuru = '';
+
+        // Safeguard Boolean untuk mencegah Infinite Loop akibat regenerasi select options di browser tertentu
+        let isRenderingImpersonation = false;
 
         const HARI_NAMA = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
@@ -935,7 +941,11 @@
                     const contentType = res.headers.get("content-type");
                     if (contentType && contentType.indexOf("application/json") === -1) {
                         return res.text().then(textHTML => {
-                            throw new Error("Google API mengirimkan data HTML, bukan JSON. Masalah ini biasa terjadi karena opsi otorisasi Web App Apps Script belum diset ke 'Anyone'.");
+                            if (textHTML.includes("<html") || textHTML.includes("<!DOCTYPE")) {
+                                console.error("Koneksi API Gagal: Server GAS mengembalikan halaman HTML...");
+                                throw new Error("Google API mengirimkan data HTML, bukan JSON. Masalah ini biasa terjadi karena opsi otorisasi Web App Apps Script belum diset ke 'Anyone'.");
+                            }
+                            throw new Error("Format respon tidak valid: Diterima data non-JSON.");
                         });
                     }
                     return res.json();
@@ -1003,7 +1013,7 @@
                 } else {
                     callback({ success: true, message: "Aksi sukses disimulasikan lokal!" });
                 }
-            }, 500);
+            }, 100);
         }
 
         function saveSessionToStorage() {
@@ -1095,6 +1105,8 @@
                     renderTableJadwal(dataJadwalGlobal);
                     renderListInformasi(dataInfoGlobal);
                     renderTableJurnal(dataJurnalGlobal);
+                    
+                    // Modul render dropdown dengan pengaman loop visual
                     renderImpersonationDropdown();
                     populasiSiswaKelasFilterDropdown();
                     
@@ -1151,8 +1163,11 @@
                 document.getElementById('impersonatingBanner').classList.add('hidden');
             }
 
+            // Memperbarui dropdown penyamaran visual secara aman tanpa trigger loop
+            isRenderingImpersonation = true;
             const selectImp = document.getElementById('selectImpersonateGuru');
             if (selectImp) selectImp.value = isImpersonating ? currentUser.nip : "";
+            isRenderingImpersonation = false;
 
             populasiAbsensiKelasDropdown();
             populasiPenilaianKelasDropdown();
@@ -1163,15 +1178,28 @@
         function renderImpersonationDropdown() {
             const select = document.getElementById('selectImpersonateGuru');
             if (!select) return;
+
+            // Kunci rendering agar event listener 'onchange' tidak men-trigger event loop tidak terbatas
+            isRenderingImpersonation = true;
+
             select.innerHTML = '<option value="">-- Mode Admin Asli --</option>';
             dataTeachersGlobal.forEach(t => {
                 select.innerHTML += `<option value="${t.nip}">${t.name} (${t.nip})</option>`;
             });
 
-            if (originalAdminUser) select.value = currentUser.nip;
+            if (originalAdminUser) {
+                select.value = currentUser.nip;
+            } else {
+                select.value = "";
+            }
+
+            isRenderingImpersonation = false;
         }
 
         function handleImpersonateChange() {
+            // Segera batalkan jika dipanggil oleh proses perakitan DOM di renderImpersonationDropdown()
+            if (isRenderingImpersonation) return;
+
             const nip = document.getElementById('selectImpersonateGuru').value.trim();
             if (!nip) {
                 stopImpersonation();
@@ -1200,11 +1228,17 @@
         }
 
         function stopImpersonation() {
+            if (isRenderingImpersonation) return;
+
             if (originalAdminUser !== null) {
                 currentUser = JSON.parse(JSON.stringify(originalAdminUser));
                 originalAdminUser = null;
                 saveSessionToStorage();
+                
+                isRenderingImpersonation = true;
                 document.getElementById('selectImpersonateGuru').value = '';
+                isRenderingImpersonation = false;
+
                 showToast('Kembali ke Mode Administrator');
                 applyUserRoleUI();
                 finishSetupDashboard();
@@ -1477,7 +1511,7 @@
 
         function openSiswaModal(action = 'add', nisn = '') {
             document.getElementById('modalSiswaAction').value = action;
-            document.getElementById('modalSiswaOldNisn').value = nisn;
+            document.getElementById('modalSiswaOldNisn').value = parseInt(nisn) || nisn;
 
             const sel = document.getElementById('inpSiswaKelas');
             sel.innerHTML = '';
@@ -1494,7 +1528,7 @@
                 document.getElementById('inpSiswaNisn').disabled = false;
             } else {
                 document.getElementById('modalSiswaTitle').textContent = 'Ubah Informasi Siswa';
-                const matched = dataSiswaGlobal.find(s => s.nisn === nisn);
+                const matched = dataSiswaGlobal.find(s => s.nisn.toString() === nisn.toString());
                 if (matched) {
                     document.getElementById('inpSiswaNisn').value = matched.nisn;
                     document.getElementById('inpSiswaNama').value = matched.nama;
@@ -1544,7 +1578,7 @@
 
             let filtered = dataSiswaGlobal;
             if (classFilter !== 'ALL') filtered = filtered.filter(s => s.idKelas === classFilter);
-            if (query !== '') filtered = filtered.filter(s => s.nama.toLowerCase().includes(query) || s.nisn.includes(query));
+            if (query !== '') filtered = filtered.filter(s => s.nama.toLowerCase().includes(query) || s.nisn.toString().includes(query));
             renderTableSiswa(filtered);
         }
 
@@ -1800,7 +1834,7 @@
 
             const quoteRegex = new RegExp("'", "g");
             listSiswa.forEach(s => {
-                const matched = existingData.find(e => e.nisn.replace(quoteRegex, "") === s.nisn);
+                const matched = existingData.find(e => e.nisn.toString().replace(quoteRegex, "") === s.nisn.toString());
                 const status = matched ? matched.status : 'H'; 
 
                 tbody.innerHTML += `
@@ -1955,7 +1989,7 @@
 
             const quoteRegex = new RegExp("'", "g");
             listSiswa.forEach(s => {
-                const matched = existingData.find(e => e.nisn.replace(quoteRegex, "") === s.nisn);
+                const matched = existingData.find(e => e.nisn.toString().replace(quoteRegex, "") === s.nisn.toString());
                 const score = matched ? matched.nilai : '';
                 const desc = matched ? matched.catatan : '';
 
@@ -2421,7 +2455,7 @@
                 const selectSiswa = document.getElementById('selRekapAbsensiSiswa');
                 selectSiswa.innerHTML = '<option value="ALL">Semua Siswa</option>';
                 dataSiswaGlobal.filter(s => s.idKelas === kelas).forEach(s => {
-                    selectSiswa.innerHTML += `<option value="${s.nisn.replace(quoteRegex, "")}">${s.nama} (${s.nisn})</option>`;
+                    selectSiswa.innerHTML += `<option value="${s.nisn.toString().replace(quoteRegex, "")}">${s.nama} (${s.nisn})</option>`;
                 });
             } else if (type === 'penilaian') {
                 const kelas = document.getElementById('selRekapPenilaianKelas').value;
@@ -2430,7 +2464,7 @@
                 
                 selectSiswa.innerHTML = '<option value="ALL">Semua Siswa</option>';
                 dataSiswaGlobal.filter(s => s.idKelas === kelas).forEach(s => {
-                    selectSiswa.innerHTML += `<option value="${s.nisn.replace(quoteRegex, "")}">${s.nama} (${s.nisn})</option>`;
+                    selectSiswa.innerHTML += `<option value="${s.nisn.toString().replace(quoteRegex, "")}">${s.nama} (${s.nisn})</option>`;
                 });
 
                 if (currentUser.role.toLowerCase() === 'guru') {
@@ -2490,7 +2524,7 @@
             const quoteRegex = new RegExp("'", "g");
             let filteredSiswa = dataSiswaGlobal.filter(s => s.idKelas === kelas);
             if (siswaId !== 'ALL') {
-                filteredSiswa = filteredSiswa.filter(s => s.nisn.replace(quoteRegex, "") === siswaId);
+                filteredSiswa = filteredSiswa.filter(s => s.nisn.toString().replace(quoteRegex, "") === siswaId.toString());
             }
             filteredSiswa.sort((a,b) => a.nama.localeCompare(b.nama));
 
@@ -2504,13 +2538,13 @@
 
             let mapStatusSiswa = {};
             filteredSiswa.forEach(s => {
-                mapStatusSiswa[s.nisn.replace(quoteRegex, "")] = { H: 0, S: 0, I: 0, A: 0, total: 0 };
+                mapStatusSiswa[s.nisn.toString().replace(quoteRegex, "")] = { H: 0, S: 0, I: 0, A: 0, total: 0 };
             });
 
             sesiAbsensi.forEach(sesi => {
                 const listStatus = sesi.dataKehadiran;
                 listStatus.forEach(stat => {
-                    const nisnClean = stat.nisn.replace(quoteRegex, "");
+                    const nisnClean = stat.nisn.toString().replace(quoteRegex, "");
                     if (mapStatusSiswa[nisnClean]) {
                         mapStatusSiswa[nisnClean][stat.status]++;
                         mapStatusSiswa[nisnClean].total++;
@@ -2520,7 +2554,7 @@
 
             let tableRows = '';
             filteredSiswa.forEach((s, idx) => {
-                const nClean = s.nisn.replace(quoteRegex, "");
+                const nClean = s.nisn.toString().replace(quoteRegex, "");
                 const stat = mapStatusSiswa[nClean] || { H: 0, S: 0, I: 0, A: 0, total: 0 };
                 const persentase = stat.total > 0 ? Math.round((stat.H / stat.total) * 100) : 100;
 
@@ -2575,7 +2609,7 @@
             const quoteRegex = new RegExp("'", "g");
             let filteredSiswa = dataSiswaGlobal.filter(s => s.idKelas === kelas);
             if (siswaId !== 'ALL') {
-                filteredSiswa = filteredSiswa.filter(s => s.nisn.replace(quoteRegex, "") === siswaId);
+                filteredSiswa = filteredSiswa.filter(s => s.nisn.toString().replace(quoteRegex, "") === siswaId.toString());
             }
             filteredSiswa.sort((a,b) => a.nama.localeCompare(b.nama));
 
@@ -2586,7 +2620,7 @@
 
             let mapNilaiSiswa = {};
             filteredSiswa.forEach(s => {
-                mapNilaiSiswa[s.nisn.replace(quoteRegex, "")] = { Formatif: [], Sumatif: [], Proyek: [] };
+                mapNilaiSiswa[s.nisn.toString().replace(quoteRegex, "")] = { Formatif: [], Sumatif: [], Proyek: [] };
             });
 
             sesiPenilaian.forEach(sesi => {
@@ -2597,7 +2631,7 @@
                 else if (jenis.includes('proyek') || jenis.includes('tugas')) key = 'Proyek';
 
                 listNilai.forEach(n => {
-                    const nClean = n.nisn.replace(quoteRegex, "");
+                    const nClean = n.nisn.toString().replace(quoteRegex, "");
                     if (mapNilaiSiswa[nClean] && n.nilai !== '') {
                         mapNilaiSiswa[nClean][key].push(parseFloat(n.nilai));
                     }
@@ -2606,7 +2640,7 @@
 
             let tableRows = '';
             filteredSiswa.forEach((s, idx) => {
-                const nClean = s.nisn.replace(quoteRegex, "");
+                const nClean = s.nisn.toString().replace(quoteRegex, "");
                 const stats = mapNilaiSiswa[nClean] || { Formatif: [], Sumatif: [], Proyek: [] };
                 
                 const avgF = stats.Formatif.length > 0 ? Math.round(stats.Formatif.reduce((a,b)=>a+b, 0) / stats.Formatif.length) : '-';
