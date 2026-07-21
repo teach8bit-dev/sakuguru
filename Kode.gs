@@ -12,7 +12,7 @@ function doGet(e) {
   if (e.parameter.action) {
     return handleApiRoute(e.parameter.action, e.parameter);
   }
-  return HtmlService.createTemplateFromFile('index')
+  return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('SakuGuru - Portal Administrasi Sekolah')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
