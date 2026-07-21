@@ -34,6 +34,7 @@ function doPost(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }
+
 function handleApiRoute(action, payload) {
   switch (action) {
     case 'verifyLogin':
